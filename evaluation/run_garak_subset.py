@@ -36,7 +36,7 @@ GARAK_REPORTS = PROJECT_ROOT / "evaluation" / "reports" / "garak"
 RECONCILE = PROJECT_ROOT / "evaluation" / "reconcile_garak.py"
 GATEWAY_URL = "http://127.0.0.1:4101/v1/chat/completions"
 
-DEFAULT_PROBES = "promptinject,leakreplay,knownbadsignatures"
+DEFAULT_PROBES = "dan,knownbadsignatures,promptinject"
 
 
 def build_rest_options(key: str) -> dict:
@@ -59,6 +59,7 @@ def build_rest_options(key: str) -> dict:
                 },
                 "response_json": True,
                 "response_json_field": "$.choices[0].message.content",
+                "request_timeout": 120,
             }
         }
     }
@@ -87,9 +88,12 @@ def main() -> int:
 
     cmd = [
         str(GARAK_PY), "-m", "garak",
-        "--generator", "rest",
+        "--target_type", "rest",
+        "--target_name", "gateway-v2",
         "--generator_option_file", str(opt_file),
-        "--probe", args.probes,
+        "--probes", args.probes,
+        "--generations", "1",
+        "--skip_unknown",
         "--report_prefix", prefix,
     ]
     print("运行 garak:", " ".join(cmd))

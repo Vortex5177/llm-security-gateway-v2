@@ -94,25 +94,32 @@ def load_hitlog(path: Path) -> list[dict]:
 
 
 def _extract_prompt(rec: dict) -> str:
+    """从 garak hitlog 记录抽取 prompt 文本，兼容多版本格式：
+    - 0.17：prompt = {"turns": [{"role":..,"content":{"text":..}}]}
+    - 旧版：messages = [{"role":..,"content": ".."}] 或 prompt 为纯字符串
+    """
     for key in ("prompt", "messages", "attempt", "input"):
-        val = rec.get(key)
-        if isinstance(val, str) and val:
-            return val
-        if isinstance(val, list) and val:
-            # messages 形式：拼接所有 user/content 文本
-            parts = []
-            for m in val:
-                if isinstance(m, dict):
-                    parts.append(str(m.get("content", "")))
-                else:
-                    parts.append(str(m))
-            joined = "\n".join(p for p in parts if p)
-            if joined:
-                return joined
-        if isinstance(val, dict):
-            content = val.get("content")
-            if isinstance(content, str):
-                return content
+        if key in rec:
+            text = _flatten_text(rec[key])
+            if text:
+                return text
+    return ""
+
+
+def _flatten_text(val: object) -> str:
+    """递归展平任意嵌套（str/dict/list）为拼接文本。"""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, list):
+        return "\n".join(p for p in (_flatten_text(v) for v in val) if p)
+    if isinstance(val, dict):
+        # 优先 text/content/turns/messages 字段，其次兜底遍历全部值
+        for k in ("text", "content", "turns", "messages"):
+            if k in val:
+                t = _flatten_text(val[k])
+                if t:
+                    return t
+        return "\n".join(p for p in (_flatten_text(v) for v in val.values()) if p)
     return ""
 
 
