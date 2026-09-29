@@ -16,6 +16,8 @@ from app.routes import chat, health, keys, models, service, stats
 from app.sampler import Sampler
 from app.vllm_service import VllmService
 from app import auth
+from app.security import engine as engine_mod
+from app.security import policy as policy_mod
 
 
 @asynccontextmanager
@@ -46,6 +48,10 @@ def create_app() -> FastAPI:
     application.state.session_factory = None  # 测试可注入临时会话工厂
     application.state.sampler = None
     application.state.vllm_service = VllmService(config)
+    policy = policy_mod.load_policy()
+    application.state.security_engine = (
+        engine_mod.SecurityEngine(policy) if policy and policy.enabled else None
+    )
     application.include_router(service.router)
     application.include_router(health.router)
     application.include_router(keys.router)

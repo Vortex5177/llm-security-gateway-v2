@@ -1,0 +1,135 @@
+# 演示用收紧策略（勿直接当生产配置）：
+#   secret.* → block（确定性格式，误报≈0）
+#   pii.*    → redact（占位符脱敏）
+#   injection.* → 保持 audit（启发式有误报，先观察）
+#
+# 用法：GATEWAY_SECURITY_CONFIG=config/security.strict-demo.yaml 后重启网关，
+# 或复制本文件内容覆盖 config/security.yaml。
+
+enabled: true
+default_action: audit
+
+request_guard:
+  enabled: true
+
+response_guard:
+  enabled: true
+  stream_mode: audit
+
+rules:
+  - id: pii.phone
+    name: 手机号
+    detector: regex
+    pattern: '1[3-9]\d{9}'
+    severity: high
+    action: redact
+    owasp: LLM02
+
+  - id: pii.id_card
+    name: 身份证号（含校验位验证）
+    detector: id_card
+    severity: high
+    action: redact
+    owasp: LLM02
+
+  - id: pii.bank_card
+    name: 银行卡号（Luhn 校验）
+    detector: bank_card
+    severity: high
+    action: redact
+    owasp: LLM02
+
+  - id: pii.email
+    name: 电子邮箱
+    detector: regex
+    pattern: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+    severity: medium
+    action: redact
+    owasp: LLM02
+
+  - id: secret.openai_key
+    name: OpenAI 风格 API Key
+    detector: regex
+    pattern: 'sk-[A-Za-z0-9_-]{20,}'
+    severity: critical
+    action: block
+    owasp: LLM02
+
+  - id: secret.aws_access_key
+    name: AWS Access Key
+    detector: regex
+    pattern: '(?:AKIA|ASIA)[0-9A-Z]{16}'
+    severity: critical
+    action: block
+    owasp: LLM02
+
+  - id: secret.github_token
+    name: GitHub Token
+    detector: regex
+    pattern: 'gh[pousr]_[A-Za-z0-9]{36,}'
+    severity: critical
+    action: block
+    owasp: LLM02
+
+  - id: secret.jwt
+    name: JWT
+    detector: regex
+    pattern: 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+    severity: critical
+    action: block
+    owasp: LLM02
+
+  - id: secret.private_key
+    name: PEM 私钥头
+    detector: regex
+    pattern: '-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'
+    severity: critical
+    action: block
+    owasp: LLM02
+
+  - id: injection.ignore_previous_en
+    name: 指令覆盖（英）
+    detector: regex
+    pattern: '(?i)ignore\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?|directions?)'
+    severity: medium
+    action: audit
+    owasp: LLM01
+
+  - id: injection.ignore_previous_cn
+    name: 指令覆盖（中）
+    detector: regex
+    pattern: '忽略(之前|以上|上述|所有|先前).{0,10}(指令|指示|要求|命令)'
+    severity: medium
+    action: audit
+    owasp: LLM01
+
+  - id: injection.system_prompt_extract
+    name: 系统提示提取
+    detector: regex
+    pattern: '(?i)((show|reveal|print|repeat|leak|tell\s+me)\s+(your\s+)?(system\s+prompt|initial\s+instructions?)|(输出|显示|打印|重复|告诉我|泄露).{0,6}(系统提示|初始指令|系统提示词))'
+    severity: medium
+    action: audit
+    owasp: LLM01
+
+  - id: injection.role_manipulation
+    name: 角色操纵
+    detector: regex
+    pattern: '(?i)(you\s+are\s+now|from\s+now\s+on\s+you\s+(are|will)|act\s+as\s+if\s+you\s+have\s+no|forget\s+(your\s+)?(instructions?|rules?|guidelines?)|从现在开始你是|忘记你的(身份|设定|规则))'
+    severity: medium
+    action: audit
+    owasp: LLM01
+
+  - id: injection.jailbreak_keyword
+    name: 越狱关键词
+    detector: regex
+    pattern: '(?i)\b(do\s+anything\s+now|jailbreak|越狱模式)\b|\bDAN\b'
+    severity: low
+    action: audit
+    owasp: LLM01
+
+  - id: injection.invisible_text
+    name: 隐藏字符（零宽/标签字符注入）
+    detector: invisible_text
+    severity: medium
+    action: audit
+    owasp: LLM01

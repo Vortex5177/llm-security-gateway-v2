@@ -13,6 +13,15 @@ V2 = V1 通用 LLM 网关 + 企业 AI 安全能力（分阶段交付，闭环叙
 - **统一安全事件**：鉴权失败 / 限流 / 模型越权 / SSRF 拦截 / key 与 provider 管理操作全部落 `security_events` 表（event_type/severity/action/source_ip/request_id/...，事件不含密钥与敏感原文；哈希链防篡改字段 M3 启用）
 - 新增端点：`POST /api/keys`（创建，明文仅返回一次）、`GET /api/keys`、`POST /api/keys/{name}/disable`；所有响应带 `X-GW-Request-Id`
 
+**M2 · Content Security（已交付）**
+
+- **策略引擎外置**：`config/security.yaml` 定义规则（id/检测器/pattern/severity/action/owasp），动作三档 `block / redact / audit`；默认全 audit 观察误报，`config/security.strict-demo.yaml` 为演示用收紧配置（secret→block、PII→redact）；同文本多命中按 block > redact > audit 裁决
+- **请求护栏**：扫描全部 message 文本（含 content parts）；block → 400 `content_policy_error`；redact → 占位符替换（`[REDACTED_PII_PHONE_1]`，llm-guard 模式保句子结构）后放行；audit → 仅记事件
+- **响应护栏（非流式）**：block → 502；redact → 改写 choices 内容；**流式响应**：滑窗增量扫描（解决跨 chunk 命中）audit-only，流量逐字节不变、命中只记事件
+- **检测器**：regex / 身份证（GB 11643 校验位）/ 银行卡（Luhn）/ InvisibleText（零宽字符 + Tags 区块 ASCII smuggling）；默认规则覆盖手机号/身份证/银行卡/邮箱、OpenAI/AWS/GitHub key、JWT、PEM 私钥、指令覆盖（中英）/系统提示提取/角色操纵/越狱关键词
+- **事件纪律**：pii/secret 命中只记 rule_id 与 span、绝不记原文；injection 命中记截断预览；每条规则带 OWASP LLM Top 10 映射
+- 良性基线：默认规则集对 50 条 V1 真实流量抽样误报率 0%（`evaluation/export_benign.py` 可复跑）
+
 **V1 基础能力（继承）**
 
 自托管、OpenAI 协议兼容的薄网关：把本地 vLLM（WSL2）与云端 API（DeepSeek / DashScope）统一到一个入口，提供模型别名解析、服务端回退链、硬顶参数注入、本地模型启停管理与全链路可观测性。
