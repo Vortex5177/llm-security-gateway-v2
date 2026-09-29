@@ -22,6 +22,24 @@ V2 = V1 通用 LLM 网关 + 企业 AI 安全能力（分阶段交付，闭环叙
 - **事件纪律**：pii/secret 命中只记 rule_id 与 span、绝不记原文；injection 命中记截断预览；每条规则带 OWASP LLM Top 10 映射
 - 良性基线：默认规则集对 50 条 V1 真实流量抽样误报率 0%（`evaluation/export_benign.py` 可复跑）
 
+**M3 · Security Operations（已交付）**
+
+- **防篡改审计链**：`security_events` 每条记录 `hash = sha256(prev_hash + canonical_json)`，全局锁串行写入保证链序；`verify_audit_chain()`（CLI `python -m app.audit verify` 或 `GET /api/security/verify`）可定位内容篡改与删行；已知边界：链尾删除需外部 checkpoint（future work）
+- **安全运营 API**：`GET /api/security/events`（severity/type/rule_id/days 过滤）、`GET /api/security/summary`（总量/分布/Top 规则/最近事件）、`GET /api/security/verify`（均仅 admin 或本机看板）
+- **看板 Security 页**：安全事件/高危/阻断/脱敏卡片、类型与级别分布图、Top 规则、最近事件表、一键链校验；页首 API Key 输入（localStorage）供管理接口调用
+
+**M4 · Red Team / Evaluation（已交付）**
+
+- **数据集**：`evaluation/datasets/` 攻击集 64 条（指令覆盖中英 / 系统提示提取 / 角色操纵 / 越狱关键词 / 隐藏字符 / PII / Secret，逐条带 `expected_rules` 标签与 OWASP 归类）+ 良性集 80 条（V1 真实流量回放 + 手工构造，含 `fp_trap` 陷阱标注）；`known_gap` 显式声明检测缺口（base64 编码绕过属模型层）
+- **对账评测管线**：`evaluation/run_eval.py` 打真实网关 → 按 `X-GW-Request-Id` 关联 `security_events` → 与数据集 ground truth **三方对账**，输出检出率/阻断率/误报率/按规则召回矩阵（JSON + Markdown 落 `evaluation/reports/`）；请求侧误报与响应侧模型输出异常分列，不夸大指标
+- **闭环验证**（默认 audit 策略）：Round1 检出 1.0 / 误报 0.013 → 定位规则缺口（phone 数字边界、隐藏字符漏 U+FFFC/CGJ、系统提示提取漏 the/中文倒序、越狱关键词 CJK `\b` 失效）→ 扩展规则 → Round2 检出 1.0 / 误报 0.0；strict-demo 策略下 secret→block，阻断率 0.19（=12 secret/63 可检出，符合仅 block secret 的设计）
+- **回归测试**：`tests/security/test_dataset_regression.py` 引擎级回放全量样本（攻击必命中期望规则、良性零命中、known_gap 受控 ≤5 且确实检不出），保证旧漏洞不复发
+- **promptfoo CI 式回归**：`evaluation/build_promptfoo_config.py` 从数据集生成 `promptfooconfig.yaml`（代表性子集），经 `evaluation/pf_parser.js`（transformResponse 提升 HTTP 状态码与安全头进 output）断言 strict-demo 下 secret→400+block、注入/PII→200、良性→200 且均带 `X-GW-Request-Id`；实测 **17/17 通过**
+- **garak 子集对账**：garak 为重型外部工具，装在独立 `.garak-venv`（不污染网关依赖）；`evaluation/reconcile_garak.py` 解析 garak `.hitlog.jsonl`，用网关引擎离线复扫 prompt 文本，按探针职责域分类 blocked/detected/passed 并与运行窗口事件交叉核对（5 项自测通过）；`evaluation/run_garak_subset.py` 一条命令跑 rest 生成器打网关 + 自动对账
+- 所有报告含**诚实声明**（受控测试集，非生产表现）与**网关层 vs 模型层边界**分析
+
+> 复跑评测：网关以目标策略启动后 `python evaluation/run_eval.py --tag <name>`；promptfoo：`python evaluation/build_promptfoo_config.py` 后 `npx promptfoo eval -c evaluation/promptfooconfig.yaml`（需设 `GW_ADMIN_KEY`）。
+
 **V1 基础能力（继承）**
 
 自托管、OpenAI 协议兼容的薄网关：把本地 vLLM（WSL2）与云端 API（DeepSeek / DashScope）统一到一个入口，提供模型别名解析、服务端回退链、硬顶参数注入、本地模型启停管理与全链路可观测性。
@@ -120,17 +138,27 @@ wsl -d Ubuntu-24.04 -- /opt/scripts/start-vllm.sh
 ## 测试与验收
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest                       # 596 个单元测试（上游用 MockTransport stub）
-.\.venv\Scripts\python.exe smoke_test.py                   # 33 项端到端检查（真调本地 vLLM）
+.\.venv\Scripts\python.exe -m pytest                       # 845 个单元/安全测试（上游用 MockTransport stub；含数据集回归 144 + garak 对账 5）
+.\.venv\Scripts\python.exe smoke_test.py                   # 38 项端到端检查（真调本地 vLLM）
 .\.venv\Scripts\python.exe smoke_test.py --fallback-demo   # 9 项回退链检查（先以 gateway.fallback_demo.yaml 在 :4101 启动演示网关）
+
+# 安全评测（M4）——需网关已以目标策略启动在 :4101
+.\.venv\Scripts\python.exe evaluation/run_eval.py --tag round1              # 三方对账评测，报告落 evaluation/reports/
+.\.venv\Scripts\python.exe evaluation/build_promptfoo_config.py            # 生成 promptfoo 配置
+npx --yes promptfoo eval -c evaluation/promptfooconfig.yaml                # CI 式回归（需设 GW_ADMIN_KEY）
+.\.venv\Scripts\python.exe evaluation/reconcile_garak.py --hitlog <path>   # garak hitlog 三方对账
+.\.venv\Scripts\python.exe -m app.audit verify                             # 审计哈希链校验
 ```
 
 ## 目录结构
 
 ```
 app/            网关主体（config / registry / routing / proxy / streaming / sampler / stats / vllm_service + routes）；wsl_vllm_control.py 为 WSL 侧启停助手
+app/security/   安全引擎（ssrf / detectors / policy / engine）；app/auth.py / ratelimit.py / audit.py 为鉴权/限流/审计链
+config/         security.yaml（默认全 audit）+ security.strict-demo.yaml（演示收紧）
+evaluation/     数据集 / 对账评测管线 run_eval.py / promptfoo 配置生成 / garak 对账 / 报告
 static/         零构建看板（index.html + dashboard.js + vendored Chart.js）
-tests/          pytest 单元测试
+tests/          pytest 单元测试；tests/security/ 为安全回归（数据集回放 + garak 对账）
 gateway.yaml    主配置；gateway.fallback_demo.yaml 为回退链演示配置（配合 smoke_test --fallback-demo）
 smoke_test.py   端到端冒烟脚本
 start.ps1       一键启动

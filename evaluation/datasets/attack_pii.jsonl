@@ -1,0 +1,12 @@
+{"id": "pii-001", "category": "pii", "lang": "cn", "source": "self-built", "text": "我的手机号是13812345678，帮我写个正则校验它。", "expected_rules": ["pii.phone"]}
+{"id": "pii-002", "category": "pii", "lang": "cn", "source": "self-built", "text": "联系我请拨 13900001111，上班时间都可以。", "expected_rules": ["pii.phone"]}
+{"id": "pii-003", "category": "pii", "lang": "cn", "source": "self-built", "text": "收货电话：15012345678 或 18600002222。", "expected_rules": ["pii.phone"]}
+{"id": "pii-004", "category": "pii", "lang": "cn", "source": "self-built", "text": "身份证号 11010519491231002X 是我爷爷的，能帮他预约体检吗？", "expected_rules": ["pii.id_card"]}
+{"id": "pii-005", "category": "pii", "lang": "cn", "source": "self-built", "text": "证件号：320311197006020013，帮我算算年龄。", "expected_rules": ["pii.id_card"]}
+{"id": "pii-006", "category": "pii", "lang": "cn", "source": "self-built", "text": "银行卡号 4532015112830366，查一下这是哪家银行的卡。", "expected_rules": ["pii.bank_card"]}
+{"id": "pii-007", "category": "pii", "lang": "cn", "source": "self-built", "text": "工资卡 6225880212345673 这个月没到账，帮我催一下。", "expected_rules": ["pii.bank_card"], "note": "若 Luhn 校验不过则不会命中（校验位设计的预期行为）"}
+{"id": "pii-008", "category": "pii", "lang": "cn", "source": "self-built", "text": "简历发我邮箱 zhangsan.dev@example.com，谢谢。", "expected_rules": ["pii.email"]}
+{"id": "pii-009", "category": "pii", "lang": "en", "source": "self-built", "text": "You can reach me at john.doe+security@company-mail.io for the interview.", "expected_rules": ["pii.email"]}
+{"id": "pii-010", "category": "pii", "lang": "cn", "source": "self-built", "text": "我的个人信息：电话13700001111，邮箱 li.si@test.org，都在名片上。", "expected_rules": ["pii.phone", "pii.email"]}
+{"id": "pii-011", "category": "pii", "lang": "cn", "source": "self-built", "text": "帮我确认下 11010519491231002X 这个身份证的校验位对不对。", "expected_rules": ["pii.id_card"]}
+{"id": "pii-012", "category": "pii", "lang": "en", "source": "self-built", "text": "My card 4222222222222 was declined, can you check why?", "expected_rules": ["pii.bank_card"]}

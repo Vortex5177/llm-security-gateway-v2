@@ -1,0 +1,148 @@
+{
+  "meta": {
+    "run_id": "eval-20260929-123526-round1",
+    "base_url": "http://127.0.0.1:4101",
+    "policy": "C:\\Users\\29461\\Documents\\Qoder\\2026-09-29\\chat-1\\gateway-v2\\config\\security.yaml",
+    "ts": "20260929-123526"
+  },
+  "metrics": {
+    "attack_total": 64,
+    "attack_expected_detectable": 61,
+    "known_gap": 3,
+    "detection_rate": 1.0,
+    "block_rate": 0.0,
+    "fp_rate": 0.013,
+    "benign_total": 80,
+    "fp_samples": [
+      {
+        "id": "bn-020",
+        "rules": [
+          "injection.invisible_text"
+        ],
+        "trap": null
+      }
+    ],
+    "missed_samples": [],
+    "by_category": {
+      "obfuscation": {
+        "total": 5,
+        "detected": 5
+      },
+      "pii": {
+        "total": 12,
+        "detected": 12
+      },
+      "prompt_injection": {
+        "total": 14,
+        "detected": 14
+      },
+      "system_prompt_leak": {
+        "total": 8,
+        "detected": 8
+      },
+      "role_manipulation": {
+        "total": 7,
+        "detected": 7
+      },
+      "jailbreak": {
+        "total": 3,
+        "detected": 3
+      },
+      "secret": {
+        "total": 12,
+        "detected": 12
+      }
+    },
+    "per_rule_recall": {
+      "injection.ignore_previous_cn": {
+        "expected": 6,
+        "hit": 6,
+        "recall": 1.0
+      },
+      "injection.ignore_previous_en": {
+        "expected": 8,
+        "hit": 8,
+        "recall": 1.0
+      },
+      "injection.invisible_text": {
+        "expected": 5,
+        "hit": 5,
+        "recall": 1.0
+      },
+      "injection.jailbreak_keyword": {
+        "expected": 3,
+        "hit": 3,
+        "recall": 1.0
+      },
+      "injection.role_manipulation": {
+        "expected": 7,
+        "hit": 7,
+        "recall": 1.0
+      },
+      "injection.system_prompt_extract": {
+        "expected": 8,
+        "hit": 8,
+        "recall": 1.0
+      },
+      "pii.bank_card": {
+        "expected": 3,
+        "hit": 3,
+        "recall": 1.0
+      },
+      "pii.email": {
+        "expected": 3,
+        "hit": 3,
+        "recall": 1.0
+      },
+      "pii.id_card": {
+        "expected": 3,
+        "hit": 3,
+        "recall": 1.0
+      },
+      "pii.phone": {
+        "expected": 4,
+        "hit": 4,
+        "recall": 1.0
+      },
+      "secret.aws_access_key": {
+        "expected": 2,
+        "hit": 2,
+        "recall": 1.0
+      },
+      "secret.github_token": {
+        "expected": 3,
+        "hit": 3,
+        "recall": 1.0
+      },
+      "secret.jwt": {
+        "expected": 2,
+        "hit": 2,
+        "recall": 1.0
+      },
+      "secret.openai_key": {
+        "expected": 3,
+        "hit": 3,
+        "recall": 1.0
+      },
+      "secret.private_key": {
+        "expected": 2,
+        "hit": 2,
+        "recall": 1.0
+      }
+    },
+    "known_gap_samples": [
+      {
+        "id": "inj-en-015",
+        "note": "disregard 变体未被规则覆盖（M4 首轮发现，第二轮规则扩展后应命中）"
+      },
+      {
+        "id": "inj-en-016",
+        "note": "疑问句式提取未被祈使句规则覆盖（已知缺口）"
+      },
+      {
+        "id": "inj-en-017",
+        "note": "base64 编码绕过（规则不解码载荷，列为模型层/未来解码器议题）"
+      }
+    ]
+  }
+}

@@ -19,7 +19,7 @@ rules:
   - id: pii.phone
     name: 手机号
     detector: regex
-    pattern: '1[3-9]\d{9}'
+    pattern: '(?<!\d)1[3-9]\d{9}(?!\d)'
     severity: high
     owasp: LLM02
 
@@ -82,21 +82,21 @@ rules:
   - id: injection.ignore_previous_en
     name: 指令覆盖（英）
     detector: regex
-    pattern: '(?i)ignore\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?|directions?)'
+    pattern: '(?i)(ignore|disregard|bypass|override)\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?|directions?)'
     severity: medium
     owasp: LLM01
 
   - id: injection.ignore_previous_cn
     name: 指令覆盖（中）
     detector: regex
-    pattern: '忽略(之前|以上|上述|所有|先前).{0,10}(指令|指示|要求|命令)'
+    pattern: '(忽略|无视)(之前|以上|上述|所有|先前).{0,10}(指令|指示|要求|命令)'
     severity: medium
     owasp: LLM01
 
   - id: injection.system_prompt_extract
     name: 系统提示提取
     detector: regex
-    pattern: '(?i)((show|reveal|print|repeat|leak|tell\s+me)\s+(your\s+)?(system\s+prompt|initial\s+instructions?)|(输出|显示|打印|重复|告诉我|泄露).{0,6}(系统提示|初始指令|系统提示词))'
+    pattern: '(?i)((show|reveal|print|repeat|leak|tell\s+me)\s+(your\s+|the\s+)?(system\s+prompt|initial\s+instructions?)|what\s+(are|is)\s+your\s+(system\s+prompt|initial\s+instructions?|instructions?|rules?)|(输出|显示|打印|重复|告诉我|泄露).{0,6}(系统提示|初始指令|系统提示词)|(系统提示|初始指令|系统提示词).{0,8}(输出|显示|打印|重复|泄露))'
     severity: medium
     owasp: LLM01
 
@@ -110,7 +110,7 @@ rules:
   - id: injection.jailbreak_keyword
     name: 越狱关键词
     detector: regex
-    pattern: '(?i)\b(do\s+anything\s+now|jailbreak|越狱模式)\b|\bDAN\b'
+    pattern: '(?i)\b(do\s+anything\s+now|jailbreak)\b|越狱模式|\bDAN\s*(mode|prompt)'
     severity: low
     owasp: LLM01
 

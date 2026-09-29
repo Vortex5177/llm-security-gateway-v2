@@ -79,9 +79,15 @@ class BankCardDetector:
         ]
 
 
+_EXTRA_INVISIBLE = {
+    0xFFFC,  # OBJECT REPLACEMENT CHARACTER（常用于隐藏载荷）
+    0x034F,  # COMBINING GRAPHEME JOINER（Mn 类，零宽混淆）
+}
+
+
 def _is_invisible(ch: str) -> bool:
     cp = ord(ch)
-    if 0xE0000 <= cp <= 0xE007F:  # Tags 区块（ASCII smuggling）
+    if 0xE0000 <= cp <= 0xE007F or cp in _EXTRA_INVISIBLE:
         return True
     return unicodedata.category(ch) == "Cf"
 
