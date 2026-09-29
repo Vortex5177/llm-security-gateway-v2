@@ -17,6 +17,13 @@ garak 是重型外部红队工具（torch/transformers），装在独立 .garak-
 
 注意：garak 各版本的探针/生成器命名可能不同，若报错请对照
 `.\.garak-venv\Scripts\python.exe -m garak --list_probes` 调整 --probes。
+
+已知 garak 0.17.0 打包 bug：detectors/knownbadsignatures.py 导入缺失的
+garak.probes.av_spam_scanning，导致插件枚举整体失败。修复：在 .garak-venv 的
+garak/probes/ 下补一个 av_spam_scanning.py，定义 EICAR_SIGNATURE/GTUBE_SIGNATURE/
+GTPHISH_SIGNATURE 三个标准测试串常量即可（仅影响隔离工具环境，不入仓库）。
+promptinject 探针依赖外部 promptinject 包，未装时会被 --skip_unknown 跳过；
+dan/knownbadsignatures 自包含无需额外下载。
 """
 
 from __future__ import annotations
