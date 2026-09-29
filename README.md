@@ -40,6 +40,15 @@ V2 = V1 通用 LLM 网关 + 企业 AI 安全能力（分阶段交付，闭环叙
 
 > 复跑评测：网关以目标策略启动后 `python evaluation/run_eval.py --tag <name>`；promptfoo：`python evaluation/build_promptfoo_config.py` 后 `npx promptfoo eval -c evaluation/promptfooconfig.yaml`（需设 `GW_ADMIN_KEY`）。
 
+**M5 · Model-Assisted Audit（已交付）**
+
+- **CPU 分类器异步审计**：`app/security/model_audit.py` 离线批处理扫 `request_logs`（不进请求路径，不扰动稳定服务），对每条 prompt 重算规则判定并跑模型分类，对比落 `model_audit_results` 表（不存 prompt 原文，仅 sha256 digest）
+- **分类器可插拔**：真实 `PromptGuardOnnxClassifier`（PromptGuard 2 86M ONNX，onnxruntime/transformers 为**可选依赖**，懒加载，缺失时显式报错不静默降级）+ `StubInjectionClassifier`（确定性关键词桩，无模型时演示管线，报告明标非真实模型）；遵守“不引重型依赖”：模型依赖不入网关运行时 venv
+- **Rule vs Model 对比报告**：`evaluation/model_audit_report.py` 以规则判定为参照算模型 injection 检出的 precision/recall/F1 + 一致率 + 延迟对比（JSON+MD 落盘）；正类聚焦 injection（PromptGuard 职责），PII/secret 属规则专属不入对比
+- **结论**：确定性规则适合有固定格式/可校验的 PII/Secret（微秒级、可解释、可脱敏）；语义模型适合改写/编码绕过/新颖注入（补召回）；分歧样本正是规则调优的闭环输入
+
+> 复跑：`python evaluation/model_audit_report.py [--limit N] [--model-dir <PromptGuard ONNX 目录>]`（缺省用 Stub）。
+
 **V1 基础能力（继承）**
 
 自托管、OpenAI 协议兼容的薄网关：把本地 vLLM（WSL2）与云端 API（DeepSeek / DashScope）统一到一个入口，提供模型别名解析、服务端回退链、硬顶参数注入、本地模型启停管理与全链路可观测性。

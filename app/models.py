@@ -1,4 +1,4 @@
-"""ORM 模型：RequestLog、GpuSample、EngineSample、ApiKey、SecurityEvent。"""
+"""ORM 模型：RequestLog、GpuSample、EngineSample、ApiKey、SecurityEvent、ModelAuditResult。"""
 
 from __future__ import annotations
 
@@ -124,3 +124,28 @@ class SecurityEvent(Base):
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ModelAuditResult(Base):
+    """M5 模型辅助审计：对历史 request_logs 的 prompt 离线跑 CPU 分类器，
+    与规则引擎判定对比落库（Rule vs Model）。
+
+    纪律：不存 prompt 原文，仅存 sha256 前 16 位（prompt_digest）供去重/追溯；
+    正类聚焦 injection（PromptGuard 职责），PII/secret 属规则专属不入对比。
+    """
+
+    __tablename__ = "model_audit_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+    request_log_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    prompt_digest: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    model_id: Mapped[str] = mapped_column(String(64))
+    model_label: Mapped[str] = mapped_column(String(16))  # injection / benign
+    model_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    model_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rule_injection: Mapped[bool] = mapped_column(Boolean, default=False)
+    rule_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    agree: Mapped[bool] = mapped_column(Boolean, default=False)

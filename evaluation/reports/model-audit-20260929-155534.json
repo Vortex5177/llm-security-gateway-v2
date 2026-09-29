@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "run_id": "model-audit-20260929-155534",
+    "db": "C:\\Users\\29461\\Documents\\Qoder\\2026-09-29\\chat-1\\gateway-v2\\data\\gateway.db",
+    "policy": "config/security.yaml",
+    "ts": "20260929-155534",
+    "model_id": "stub-keyword"
+  },
+  "metrics": {
+    "total": 400,
+    "tp": 75,
+    "fp": 6,
+    "fn": 49,
+    "tn": 270,
+    "agreement": 0.863,
+    "precision": 0.926,
+    "recall": 0.605,
+    "f1": 0.732,
+    "avg_model_latency_ms": 0.003,
+    "avg_rule_latency_ms": 0.155,
+    "model_id": "stub-keyword"
+  }
+}
