@@ -1,0 +1,38 @@
+# 回退链演示配置（模块 2 验收标准③）：
+# 主模型 qwen3-broken 指向未启动端口 → 自动回退到本地 vLLM，客户端无感。
+# 启动（4101）：
+#   $env:GATEWAY_CONFIG="gateway.fallback_demo.yaml"; .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 4101
+# 验证：
+#   .\.venv\Scripts\python.exe smoke_test.py --base-url http://127.0.0.1:4101 --fallback-demo
+server:
+  host: 127.0.0.1
+  port: 4101
+  upstream_timeout_seconds: 30
+  auth:
+    enabled: false
+    key_env: GW_API_KEY
+
+providers:
+  local-broken:
+    base_url: http://localhost:9999/v1     # 未启动端口：连接被拒
+    api_key: EMPTY
+  local-vllm:
+    base_url: http://localhost:8200/v1
+    api_key: EMPTY
+    metrics_url: http://localhost:8200/metrics
+
+models:
+  qwen3-broken: { provider: local-broken, upstream: qwen3-1.7b }
+  qwen3-1.7b:   { provider: local-vllm,   upstream: qwen3-1.7b }
+
+aliases:
+  default: qwen3-broken
+
+fallbacks:
+  qwen3-broken: [qwen3-1.7b]
+
+injection:
+  default: { max_tokens: 256, extra: { chat_template_kwargs: { enable_thinking: false } } }
+
+sampling:
+  interval_seconds: 5

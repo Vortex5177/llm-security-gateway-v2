@@ -1,0 +1,55 @@
+server:
+  host: 127.0.0.1
+  port: 4101                      # V2 端口；避开 V1 :4100 与 4000/8000/8200/6333 既有占用
+  upstream_timeout_seconds: 300   # 对齐 LangChain request_timeout 习惯
+  auth:
+    enabled: false                # 个人本机默认关闭
+    key_env: GW_API_KEY
+
+providers:
+  local-vllm:
+    base_url: http://localhost:8200/v1
+    type: local                  # 可选（local|cloud）；缺省按 base_url 自动推断
+    api_key: EMPTY
+    metrics_url: http://localhost:8200/metrics   # 可空 = 不采引擎指标
+  deepseek:
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+  dashscope:
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key_env: DASHSCOPE_API_KEY
+
+models:                            # 客户端可见名 → provider + 上游名
+  qwen3-1.7b:     { provider: local-vllm, upstream: qwen3-1.7b }
+  qwen3-4b-awq:   { provider: local-vllm, upstream: qwen3-4b-awq }
+  qwen3.5-4b-awq: { provider: local-vllm, upstream: qwen3.5-4b-awq }
+  deepseek-chat:  { provider: deepseek,   upstream: deepseek-chat }
+  deepseek-flash:  { provider: deepseek,  upstream: deepseek-flash }
+  deepseek-v4-pro: { provider: deepseek,  upstream: deepseek-v4-pro }
+
+aliases:
+  default: qwen3-1.7b              # 切换本地/云只需改这一行
+
+fallbacks:                         # 仅服务端；键也支持 "模型@精确tag" 高级用法
+  qwen3-1.7b: [deepseek-chat]      # 本地失败 → 云兜底
+
+injection:                         # 固定硬顶（override），tag 精确匹配 + default 兜底
+  default:       { max_tokens: 2048, extra: { chat_template_kwargs: { enable_thinking: false } } }
+  speclens/scan: { max_tokens: 32768, repetition_penalty: 1.05 }
+
+local_vllm:
+  enabled: true
+  provider: local-vllm
+  wsl_distro: Ubuntu-24.04
+  start_script: /opt/scripts/start-vllm.sh
+  models:                        # 候选模型路径（候选名 = 目录名小写，需有对应 models 映射）
+    - /opt/models/Qwen3-1.7B
+    - /opt/models/Qwen3-4B-AWQ
+    - /opt/models/Qwen3.5-4B-AWQ
+  tool_parsers:                  # 可选：候选名 → vLLM --tool-call-parser（缺省 hermes）
+    qwen3.5-4b-awq: qwen3_xml    # Qwen3.5 模板为 XML 工具调用格式，不兼容 hermes
+
+sampling:
+  interval_seconds: 5              # NVML + /metrics 统一采样间隔
+  gpu_source: auto                # auto | nvml | wsl（Windows NVML 看不见 WSL 负载时改 wsl）
+  # wsl_distro: Ubuntu-24.04      # gpu_source=wsl 时使用的发行版

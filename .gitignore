@@ -1,0 +1,12 @@
+.venv/
+data/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.aicoding-chat-workspace
+
+# 个人文档，不进公开仓库
+RESUME.md

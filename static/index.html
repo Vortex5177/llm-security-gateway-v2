@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Gateway 仪表盘</title>
+<script src="./chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#101418; --panel:#161c22; --line:#242c35; --fg:#d8dee6;
+    --muted:#7d8b99; --accent:#4da3ff; --ok:#3fbf7f; --warn:#e0a13e; --err:#e05c5c;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:12px 20px;
+           border-bottom:1px solid var(--line); position:sticky; top:0;
+           background:var(--bg); z-index:2; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; font-weight:600; letter-spacing:.3px; }
+  header .spacer { flex:1; }
+  select, button { background:var(--panel); color:var(--fg); border:1px solid var(--line);
+                   border-radius:6px; padding:6px 10px; font-size:13px; }
+  button { cursor:pointer; }
+  button:hover, select:hover { border-color:var(--accent); }
+  main { padding:16px 20px 40px; max-width:1500px; margin:0 auto; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+           gap:12px; margin-bottom:14px; }
+  .card { background:var(--panel); border:1px solid var(--line);
+          border-radius:10px; padding:12px 14px; }
+  .card .label { font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .card .value { font-size:22px; font-weight:600; }
+  .card .value small { font-size:12px; color:var(--muted); font-weight:400; }
+  .charts, .tables { display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr));
+                     gap:12px; margin-bottom:14px; }
+  .chart-box { background:var(--panel); border:1px solid var(--line);
+               border-radius:10px; padding:10px 12px 6px; }
+  .chart-box h2 { font-size:13px; margin:2px 0 8px; color:var(--muted); font-weight:500; }
+  .chart-box .wrap { position:relative; height:238px; }
+  .table-box { background:var(--panel); border:1px solid var(--line);
+               border-radius:10px; padding:10px 12px; overflow-x:auto; }
+  .table-box h2 { font-size:13px; margin:2px 0 8px; color:var(--muted); font-weight:500; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.catalog { table-layout:fixed; min-width:600px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:500; }
+  tbody tr:hover td { background:#1a222b; }
+  .status { padding:1px 7px; border-radius:999px; font-size:11.5px; }
+  .status.ok { background:rgba(63,191,127,.15); color:var(--ok); }
+  .status.upstream_error, .status.timeout { background:rgba(224,92,92,.15); color:var(--err); }
+  .status.client_abort { background:rgba(224,161,62,.15); color:var(--warn); }
+  .badge { padding:1px 7px; border-radius:999px; font-size:11.5px;
+           background:rgba(125,139,153,.15); color:var(--muted); }
+  .badge.local { background:rgba(63,191,127,.15); color:var(--ok); }
+  .badge.cloud { background:rgba(77,163,255,.15); color:var(--accent); }
+  .cellwrap { white-space:normal; word-break:break-all; }
+  .hint { margin-left:8px; font-weight:400; opacity:.55; }
+  button.mini { padding:2px 8px; font-size:11.5px; margin-left:6px; }
+  .keyedit input { width:100%; box-sizing:border-box; background:var(--bg); color:var(--fg);
+                   border:1px solid var(--line); border-radius:6px; padding:4px 8px; font-size:12px; }
+  .keyedit input:focus { outline:none; border-color:var(--accent); }
+  .keyedit .keyedit-actions { margin-top:4px; display:flex; gap:6px; }
+  .keyedit .err { color:var(--err); font-size:11.5px; margin-top:4px; }
+  .addform { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .addform select, .addform input { background:var(--bg); color:var(--fg);
+      border:1px solid var(--line); border-radius:6px; padding:4px 8px; font-size:12px; }
+  .addform select:focus, .addform input:focus { outline:none; border-color:var(--accent); }
+  .addform input.keyinput { flex:1; min-width:180px; }
+  .addform .err { color:var(--err); font-size:11.5px; width:100%; }
+  .muted { color:var(--muted); }
+  #updated { font-size:12px; color:var(--muted); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .local-service { margin-bottom:14px; }
+  .service-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; font-size:13px; }
+  .service-row .service-actions { display:flex; gap:8px; margin-left:auto; }
+  #service-select { max-width:220px; }
+  #service-select:disabled { opacity:.6; }
+  #service-url { overflow-wrap:anywhere; }
+  #service-state { color:var(--muted); }
+  #service-state[data-state="running"] { color:var(--ok); }
+  #service-state[data-state="starting"], #service-state[data-state="stopping"] { color:var(--warn); }
+  #service-state[data-state="failed"], #service-state[data-state="conflict"],
+  #service-state[data-state="unavailable"] { color:var(--err); }
+  #service-detail { font:12px/1.6 system-ui,"Microsoft YaHei",sans-serif; color:var(--muted);
+                    white-space:pre-wrap; overflow-wrap:anywhere; max-height:150px; overflow:auto; margin:8px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LLM Gateway</h1>
+  <span id="updated"></span>
+  <span class="spacer"></span>
+  <select id="days">
+    <option value="1">近 1 天</option>
+    <option value="7" selected>近 7 天</option>
+    <option value="30">近 30 天</option>
+  </select>
+  <select id="tag"><option value="">全部 tag</option></select>
+  <button id="refresh">刷新</button>
+</header>
+<main>
+  <div class="cards" id="cards"></div>
+  <div class="tables">
+    <div class="table-box">
+      <h2>可切换模型<span id="catalog-hint" class="hint"></span></h2>
+      <table class="catalog">
+        <colgroup>
+          <col style="width:18%"><col style="width:8%"><col style="width:16%">
+          <col style="width:16%"><col style="width:14%"><col style="width:28%">
+        </colgroup>
+        <thead>
+          <tr><th>模型</th><th>类型</th><th>Provider</th><th>上游名</th><th>别名</th><th>回退链</th></tr>
+        </thead>
+        <tbody id="models-body">
+          <tr><td colspan="6" class="muted">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-box">
+      <h2>Provider 接入 <button id="add-provider" class="mini" type="button">＋ 添加</button></h2>
+      <table class="catalog">
+        <colgroup>
+          <col style="width:14%"><col style="width:7%"><col style="width:16%">
+          <col style="width:17%"><col style="width:31%"><col style="width:15%">
+        </colgroup>
+        <thead>
+          <tr><th>Provider</th><th>类型</th><th>Base URL</th><th>密钥</th><th>连通性</th><th>承载模型</th></tr>
+        </thead>
+        <tbody id="providers-body">
+          <tr><td colspan="6" class="muted">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <section class="table-box local-service" aria-labelledby="service-heading">
+    <h2 id="service-heading">本地模型服务</h2>
+    <div class="service-row">
+      <label for="service-select" class="muted">模型</label>
+      <select id="service-select" disabled></select>
+      <span id="service-url" class="muted"></span>
+      <span id="service-state" role="status" aria-live="polite">读取状态中…</span>
+      <div class="service-actions">
+        <button id="service-start" type="button" disabled>启动</button>
+        <button id="service-stop" type="button" disabled>停止</button>
+      </div>
+    </div>
+    <pre id="service-detail">仅本机控制；关闭页面不会停止模型。</pre>
+  </section>
+  <div class="charts">
+    <div class="chart-box">
+      <h2>请求与 Token</h2>
+      <div class="wrap"><canvas id="chart-traffic"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>延迟趋势（平均延迟 / TTFT）</h2>
+      <div class="wrap"><canvas id="chart-latency"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>生成速度 tokens/s</h2>
+      <div class="wrap"><canvas id="chart-tps"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>GPU 利用率与显存</h2>
+      <div class="wrap"><canvas id="chart-gpu"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>引擎排队与 KV Cache</h2>
+      <div class="wrap"><canvas id="chart-engine"></canvas></div>
+    </div>
+  </div>
+  <div class="table-box">
+    <h2>最近请求</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>时间</th><th>tag</th><th>模型</th><th>tokens</th>
+          <th>延迟</th><th>TTFT</th><th>速度</th><th>状态</th><th>attempts</th>
+        </tr>
+      </thead>
+      <tbody id="recent-body"></tbody>
+    </table>
+  </div>
+</main>
+<script src="./dashboard.js?v=7"></script>
+</body>
+</html>
