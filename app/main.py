@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_config
 from app.db import init_db
 from app.registry import Registry
-from app.routes import chat, health, keys, models, service, stats
+from app.routes import chat, health, keys, models, security, service, stats
 from app.sampler import Sampler
 from app.vllm_service import VllmService
 from app import auth
@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     application.include_router(service.router)
     application.include_router(health.router)
     application.include_router(keys.router)
+    application.include_router(security.router)
     application.include_router(models.router)
     application.include_router(chat.router)
     application.include_router(stats.router)

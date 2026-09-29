@@ -18,7 +18,7 @@
            background:var(--bg); z-index:2; flex-wrap:wrap; }
   header h1 { font-size:17px; margin:0; font-weight:600; letter-spacing:.3px; }
   header .spacer { flex:1; }
-  select, button { background:var(--panel); color:var(--fg); border:1px solid var(--line);
+  select, button, header input { background:var(--panel); color:var(--fg); border:1px solid var(--line);
                    border-radius:6px; padding:6px 10px; font-size:13px; }
   button { cursor:pointer; }
   button:hover, select:hover { border-color:var(--accent); }
@@ -89,6 +89,7 @@
   <h1>LLM Gateway</h1>
   <span id="updated"></span>
   <span class="spacer"></span>
+  <input id="api-key" type="password" placeholder="API Key（安全页需 admin）" style="width:220px">
   <select id="days">
     <option value="1">近 1 天</option>
     <option value="7" selected>近 7 天</option>
@@ -145,6 +146,35 @@
     </div>
     <pre id="service-detail">仅本机控制；关闭页面不会停止模型。</pre>
   </section>
+  <div class="cards" id="sec-cards"></div>
+  <div class="charts">
+    <div class="chart-box">
+      <h2>安全事件类型分布</h2>
+      <div class="wrap"><canvas id="chart-sectype"></canvas></div>
+    </div>
+    <div class="chart-box">
+      <h2>严重级别分布</h2>
+      <div class="wrap"><canvas id="chart-secsev"></canvas></div>
+    </div>
+  </div>
+  <div class="tables">
+    <div class="table-box">
+      <h2>Top 命中规则</h2>
+      <table>
+        <thead><tr><th>规则</th><th>命中数</th></tr></thead>
+        <tbody id="sec-rules-body"></tbody>
+      </table>
+    </div>
+    <div class="table-box">
+      <h2>最近安全事件 <button id="sec-verify" class="mini" type="button">校验审计链</button><span id="sec-verify-result" class="hint"></span></h2>
+      <table>
+        <thead>
+          <tr><th>时间</th><th>类型</th><th>级别</th><th>动作</th><th>规则</th><th>来源</th></tr>
+        </thead>
+        <tbody id="sec-events-body"></tbody>
+      </table>
+    </div>
+  </div>
   <div class="charts">
     <div class="chart-box">
       <h2>请求与 Token</h2>
@@ -180,6 +210,6 @@
     </table>
   </div>
 </main>
-<script src="./dashboard.js?v=7"></script>
+<script src="./dashboard.js?v=8"></script>
 </body>
 </html>

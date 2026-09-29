@@ -17,6 +17,22 @@ const esc = (s) =>
   String(s == null ? "" : s).replace(/[&<>"']/g, (ch) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 
+/* API Key（localStorage）：存在时所有请求带 Authorization 头 */
+const apiKeyInput = document.getElementById("api-key");
+apiKeyInput.value = localStorage.getItem("gw_api_key") || "";
+apiKeyInput.addEventListener("change", () => {
+  localStorage.setItem("gw_api_key", apiKeyInput.value.trim());
+  loadSecurity().catch(() => {});
+});
+
+function gfetch(url, opts) {
+  opts = opts || {};
+  const key = (localStorage.getItem("gw_api_key") || "").trim();
+  const headers = Object.assign({}, opts.headers || {});
+  if (key && !headers["Authorization"]) headers["Authorization"] = "Bearer " + key;
+  return fetch(url, Object.assign({}, opts, { headers: headers }));
+}
+
 function fmtShort(iso) {
   const d = new Date(iso);
   const p = (x) => String(x).padStart(2, "0");
@@ -258,7 +274,7 @@ function renderCatalog(data) {
 }
 
 async function loadCatalog() {
-  const resp = await fetch("/api/models");
+  const resp = await gfetch("/api/models");
   if (!resp.ok) throw new Error("HTTP " + resp.status);
   renderCatalog(await resp.json());
 }
@@ -270,7 +286,7 @@ function showError(err) {
 async function load() {
   const params = new URLSearchParams({ days: String(state.days) });
   if (state.tag) params.set("tag", state.tag);
-  const resp = await fetch("/api/stats?" + params.toString());
+  const resp = await gfetch("/api/stats?" + params.toString());
   if (!resp.ok) throw new Error("HTTP " + resp.status);
   const data = await resp.json();
   renderCards(data.totals);
@@ -373,7 +389,7 @@ async function loadLocalService() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const resp = await fetch("/api/local-vllm", { cache: "no-store", signal: controller.signal });
+    const resp = await gfetch("/api/local-vllm", { cache: "no-store", signal: controller.signal });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const view = await resp.json();
     if (epoch === serviceEpoch) renderLocalService(view);
@@ -407,7 +423,7 @@ async function controlLocalService(action, model) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25000);
   try {
-    const resp = await fetch("/api/local-vllm/" + action, {
+    const resp = await gfetch("/api/local-vllm/" + action, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: action === "stop" ? "{}" : JSON.stringify({ model: model }),
       signal: controller.signal,
@@ -488,7 +504,7 @@ async function saveProviderKey(name) {
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中…"; }
   let resp;
   try {
-    resp = await fetch("/api/providers/" + encodeURIComponent(name) + "/key", {
+    resp = await gfetch("/api/providers/" + encodeURIComponent(name) + "/key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ api_key: value }),
@@ -566,7 +582,7 @@ async function saveAddProvider() {
   btn.textContent = "保存中…";
   let resp;
   try {
-    resp = await fetch("/api/providers", {
+    resp = await gfetch("/api/providers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -589,6 +605,93 @@ async function saveAddProvider() {
 }
 
 document.getElementById("add-provider").addEventListener("click", startAddProvider);
+
+/* ---- 安全运营页（/api/security/*，需 admin key） ---- */
+
+const SEV_COLOR = { critical: C.red, high: C.orange, medium: C.blue, low: C.gray, info: C.gray };
+
+function renderSecCards(d) {
+  const cards = [
+    { label: "安全事件", value: fmtInt(d.events_total) },
+    { label: "总请求数", value: fmtInt(d.requests_total) },
+    { label: "高危事件", value: fmtInt(d.high_risk) },
+    { label: "阻断/拒绝", value: fmtInt(d.blocked) },
+    { label: "脱敏", value: fmtInt(d.redacted) },
+    { label: "仅审计", value: fmtInt(d.audit_only) },
+  ];
+  document.getElementById("sec-cards").innerHTML = cards
+    .map((c) => '<div class="card"><div class="label">' + c.label + '</div><div class="value">' + c.value + "</div></div>")
+    .join("");
+}
+
+function barChart(id, labels, values, colors) {
+  upsertChart(id, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{ label: "事件数", data: values, backgroundColor: colors, borderRadius: 3, maxBarThickness: 46 }],
+    },
+    options: chartOptions("事件数"),
+  });
+}
+
+function renderSecCharts(d) {
+  const types = Object.keys(d.by_type);
+  barChart("sectype", types, types.map((t) => d.by_type[t]), types.map(() => "rgba(77,163,255,.55)"));
+  const sevs = Object.keys(d.by_severity);
+  upsertChart("secsev", {
+    type: "doughnut",
+    data: {
+      labels: sevs,
+      datasets: [{ data: sevs.map((s) => d.by_severity[s]), backgroundColor: sevs.map((s) => SEV_COLOR[s] || C.gray) }],
+    },
+    options: { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { labels: { color: "#d8dee6", boxWidth: 12, font: { size: 11 } } } } },
+  });
+}
+
+function renderSecTables(d) {
+  const rules = d.top_rules.map((r) =>
+    "<tr><td>" + esc(r.rule_id) + "</td><td>" + fmtInt(r.count) + "</td></tr>");
+  document.getElementById("sec-rules-body").innerHTML = rules.join("") ||
+    '<tr><td colspan="2" class="muted">窗口内无规则命中</td></tr>';
+  const rows = d.recent.map((e) => {
+    const sev = '<span class="status ' + (e.severity === "critical" || e.severity === "high" ? "upstream_error" : e.severity === "medium" ? "client_abort" : "ok") + '">' + esc(e.severity) + "</span>";
+    return "<tr><td>" + fmtTime(e.ts) + "</td><td>" + esc(e.event_type) + "</td><td>" + sev +
+      "</td><td>" + esc(e.action) + "</td><td>" + esc(e.rule_id || "—") + "</td><td>" + esc(e.source_ip || "—") + "</td></tr>";
+  });
+  document.getElementById("sec-events-body").innerHTML = rows.join("") ||
+    '<tr><td colspan="6" class="muted">窗口内无安全事件</td></tr>';
+}
+
+async function loadSecurity() {
+  const resp = await gfetch("/api/security/summary?days=" + state.days);
+  if (resp.status === 401 || resp.status === 403) {
+    document.getElementById("sec-cards").innerHTML =
+      '<div class="card"><div class="label">安全运营</div><div class="value"><small>需要 admin API Key（页首输入）</small></div></div>';
+    return;
+  }
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  const data = await resp.json();
+  renderSecCards(data);
+  renderSecCharts(data);
+  renderSecTables(data);
+}
+
+document.getElementById("sec-verify").addEventListener("click", async () => {
+  const el = document.getElementById("sec-verify-result");
+  el.textContent = "校验中…";
+  try {
+    const resp = await gfetch("/api/security/verify");
+    if (resp.status === 401 || resp.status === 403) { el.textContent = "需要 admin API Key"; return; }
+    const d = await resp.json();
+    el.textContent = d.ok
+      ? "✓ 链完整（" + d.checked + " 条，遗留 " + d.legacy + " 条）"
+      : "✗ " + d.reason + "（" + d.first_bad + "）";
+  } catch (err) {
+    el.textContent = "校验失败：" + err.message;
+  }
+});
 
 document.getElementById("providers-body").addEventListener("change", (event) => {
   const sel = event.target.closest('select[data-act="add-preset"]');
@@ -623,6 +726,7 @@ document.getElementById("tag").value = state.tag;
 document.getElementById("days").addEventListener("change", (event) => {
   state.days = Number(event.target.value);
   load().catch(showError);
+  loadSecurity().catch(() => {});
 });
 document.getElementById("tag").addEventListener("change", (event) => {
   state.tag = event.target.value;
@@ -632,10 +736,12 @@ document.getElementById("refresh").addEventListener("click", () => {
   load().catch(showError);
   loadCatalog().catch(showError);
   loadLocalService();
+  loadSecurity().catch(() => {});
 });
 
 pollLocalService();
 load().catch(showError);
 // 目录含 provider 连通性探测：仅页面加载/手动刷新时拉取，不随 30s 轮询
 loadCatalog().catch(showError);
+loadSecurity().catch(() => {});
 setInterval(() => load().catch(() => {}), 30000);

@@ -7,6 +7,7 @@ import os
 import httpx
 import pytest
 import yaml
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import (
     ConfigError,
@@ -15,7 +16,21 @@ from app.config import (
     reset_config_cache,
     validate_user_overlay,
 )
+from app.models import Base
 from app.registry import Registry, UnknownModelError
+
+
+@pytest.fixture()
+async def session_factory(tmp_path):
+    """临时 DB：避免事件落库经 SessionLocal 兜底写入真实 gateway.db。"""
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
 
 
 def _mock_transport() -> httpx.MockTransport:
@@ -35,13 +50,15 @@ def _write_main_yaml(tmp_path, config_dict):
     return main_yaml
 
 
-def _make_app(config_dict, transport):
+def _make_app(config_dict, transport, session_factory=None):
     from app.main import create_app
 
     app = create_app()
     app.state.config = parse_config(config_dict)
     app.state.registry = Registry(app.state.config)
     app.state.http_transport = transport
+    if session_factory is not None:
+        app.state.session_factory = session_factory
     return app
 
 
@@ -128,7 +145,7 @@ def test_validate_user_overlay(tmp_path, monkeypatch, config_dict):
 # ---- POST /api/providers ----------------------------------------------------
 
 
-async def test_create_provider_preset_hot_reload(tmp_path, monkeypatch, config_dict):
+async def test_create_provider_preset_hot_reload(tmp_path, monkeypatch, config_dict, session_factory):
     import app.config as config_module
     import app.routes.models as models_module
 
@@ -140,7 +157,7 @@ async def test_create_provider_preset_hot_reload(tmp_path, monkeypatch, config_d
     monkeypatch.setattr(models_module, "ENV_FILE", tmp_path / ".env")
     monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
 
-    app = _make_app(config_dict, _mock_transport())
+    app = _make_app(config_dict, _mock_transport(), session_factory)
     try:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://gw"
@@ -175,7 +192,7 @@ async def test_create_provider_preset_hot_reload(tmp_path, monkeypatch, config_d
         reset_config_cache()
 
 
-async def test_create_provider_custom_and_rejects(tmp_path, monkeypatch, config_dict):
+async def test_create_provider_custom_and_rejects(tmp_path, monkeypatch, config_dict, session_factory):
     import app.config as config_module
     import app.routes.models as models_module
 
@@ -186,7 +203,7 @@ async def test_create_provider_custom_and_rejects(tmp_path, monkeypatch, config_
     )
     monkeypatch.setattr(models_module, "ENV_FILE", tmp_path / ".env")
 
-    app = _make_app(config_dict, _mock_transport())
+    app = _make_app(config_dict, _mock_transport(), session_factory)
     try:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://gw"
@@ -266,7 +283,7 @@ async def test_create_provider_custom_and_rejects(tmp_path, monkeypatch, config_
         os.environ.pop("MY_GW_API_KEY", None)
 
 
-async def test_create_provider_guards(tmp_path, monkeypatch, config_dict):
+async def test_create_provider_guards(tmp_path, monkeypatch, config_dict, session_factory):
     import app.config as config_module
     import app.routes.models as models_module
 
@@ -277,7 +294,7 @@ async def test_create_provider_guards(tmp_path, monkeypatch, config_dict):
     )
     monkeypatch.setattr(models_module, "ENV_FILE", tmp_path / ".env")
 
-    app = _make_app(config_dict, _mock_transport())
+    app = _make_app(config_dict, _mock_transport(), session_factory)
     try:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://gw"

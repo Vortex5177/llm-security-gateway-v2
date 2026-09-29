@@ -5,8 +5,24 @@ from __future__ import annotations
 import os
 
 import httpx
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import parse_config
+from app.models import Base
+
+
+@pytest.fixture()
+async def session_factory(tmp_path):
+    """临时 DB：避免事件落库经 SessionLocal 兜底写入真实 gateway.db。"""
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}"
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
 
 
 def _mock_transport() -> httpx.MockTransport:
@@ -20,7 +36,7 @@ def _mock_transport() -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-def _client(config_dict, transport, env_file, monkeypatch) -> httpx.AsyncClient:
+def _client(config_dict, transport, env_file, monkeypatch, session_factory) -> httpx.AsyncClient:
     import app.routes.models as models_module
     from app.main import create_app
     from app.registry import Registry
@@ -30,17 +46,18 @@ def _client(config_dict, transport, env_file, monkeypatch) -> httpx.AsyncClient:
     app.state.config = parse_config(config_dict)
     app.state.registry = Registry(app.state.config)
     app.state.http_transport = transport
+    app.state.session_factory = session_factory
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://gw"
     )
 
 
-async def test_save_key_writes_env_and_takes_effect(config_dict, tmp_path, monkeypatch):
+async def test_save_key_writes_env_and_takes_effect(config_dict, tmp_path, monkeypatch, session_factory):
     env_file = tmp_path / ".env"
     env_file.write_text("# 既有注释\nDASHSCOPE_API_KEY=keep-me\n", encoding="utf-8")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
-    async with _client(config_dict, _mock_transport(), env_file, monkeypatch) as client:
+    async with _client(config_dict, _mock_transport(), env_file, monkeypatch, session_factory) as client:
         resp = await client.post(
             "/api/providers/deepseek/key", json={"api_key": "sk-new-123"}
         )
@@ -60,12 +77,12 @@ async def test_save_key_writes_env_and_takes_effect(config_dict, tmp_path, monke
     assert "sk-new-123" not in resp.text  # 密钥值绝不外泄
 
 
-async def test_save_key_updates_existing_line(config_dict, tmp_path, monkeypatch):
+async def test_save_key_updates_existing_line(config_dict, tmp_path, monkeypatch, session_factory):
     env_file = tmp_path / ".env"
     env_file.write_text("DEEPSEEK_API_KEY=old-key\nOTHER=1\n", encoding="utf-8")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "old-key")
 
-    async with _client(config_dict, _mock_transport(), env_file, monkeypatch) as client:
+    async with _client(config_dict, _mock_transport(), env_file, monkeypatch, session_factory) as client:
         resp = await client.post(
             "/api/providers/deepseek/key", json={"api_key": "sk-rotated"}
         )
@@ -78,9 +95,9 @@ async def test_save_key_updates_existing_line(config_dict, tmp_path, monkeypatch
     assert sum(1 for line in lines if line.startswith("DEEPSEEK_API_KEY=")) == 1
 
 
-async def test_save_key_rejects_unknown_and_literal(config_dict, tmp_path, monkeypatch):
+async def test_save_key_rejects_unknown_and_literal(config_dict, tmp_path, monkeypatch, session_factory):
     env_file = tmp_path / ".env"
-    async with _client(config_dict, _mock_transport(), env_file, monkeypatch) as client:
+    async with _client(config_dict, _mock_transport(), env_file, monkeypatch, session_factory) as client:
         resp = await client.post("/api/providers/nope/key", json={"api_key": "x"})
         assert resp.status_code == 404
         resp = await client.post("/api/providers/local-vllm/key", json={"api_key": "x"})
@@ -89,9 +106,9 @@ async def test_save_key_rejects_unknown_and_literal(config_dict, tmp_path, monke
     assert not env_file.exists()  # 任何拒绝路径都不落盘
 
 
-async def test_save_key_rejects_bad_values(config_dict, tmp_path, monkeypatch):
+async def test_save_key_rejects_bad_values(config_dict, tmp_path, monkeypatch, session_factory):
     env_file = tmp_path / ".env"
-    async with _client(config_dict, _mock_transport(), env_file, monkeypatch) as client:
+    async with _client(config_dict, _mock_transport(), env_file, monkeypatch, session_factory) as client:
         for bad in ("", "   ", "sk-a\nDEEPSEEK_API_KEY=injected", "sk-\x00x"):
             resp = await client.post(
                 "/api/providers/deepseek/key", json={"api_key": bad}
@@ -101,11 +118,11 @@ async def test_save_key_rejects_bad_values(config_dict, tmp_path, monkeypatch):
 
 
 async def test_save_key_rejects_non_json_and_cross_origin(
-    config_dict, tmp_path, monkeypatch
+    config_dict, tmp_path, monkeypatch, session_factory
 ):
     env_file = tmp_path / ".env"
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    async with _client(config_dict, _mock_transport(), env_file, monkeypatch) as client:
+    async with _client(config_dict, _mock_transport(), env_file, monkeypatch, session_factory) as client:
         # 浏览器跨站"简单请求"（text/plain + JSON 字符串）必须被拒：
         # FastAPI 在 body 解析层先拒（422）；端点内另有 415 媒体类型校验兜底
         resp = await client.post(
