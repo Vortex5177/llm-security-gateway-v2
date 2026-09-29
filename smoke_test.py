@@ -23,6 +23,8 @@ import sys
 import time
 from pathlib import Path
 
+import yaml
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "gateway.db"
 REQUIRED_TABLES = {"request_logs", "gpu_samples", "engine_samples"}
@@ -63,6 +65,20 @@ def _latest_request_log(db_path: Path):
     finally:
         conn.close()
     return row
+
+
+def _expected_tag_cap(tag: str) -> int | None:
+    """从 gateway.yaml 读取指定 tag 的硬顶 max_tokens（断言随配置走，不硬编码）。"""
+    cfg_path = PROJECT_ROOT / "gateway.yaml"
+    if not cfg_path.is_file():
+        return None
+    try:
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return None
+    row = (data.get("injection") or {}).get(tag) or {}
+    cap = row.get("max_tokens")
+    return cap if isinstance(cap, int) else None
 
 
 def _chat_once(client, base_url: str, body: dict, tag: str | None = None):
@@ -200,10 +216,11 @@ def check_chat_basic(client, base_url: str) -> None:
 
 
 def check_tag_injection(client, base_url: str, db_path: Path) -> None:
+    expected_cap = _expected_tag_cap("speclens/scan")
     body = {
         "model": "qwen3-1.7b",
         "messages": [{"role": "user", "content": "请只回复两个字：收到"}],
-        "max_tokens": 8,  # 客户端给 8，应被 x-gw-tag 行硬顶覆盖为 4096
+        "max_tokens": 8,  # 客户端给 8，应被 x-gw-tag 行硬顶覆盖为配置值
     }
     try:
         resp = _chat_once(client, base_url, body, tag="speclens/scan")
@@ -228,8 +245,10 @@ def check_tag_injection(client, base_url: str, db_path: Path) -> None:
     except ValueError:
         injected = {}
     check(
-        "落库 injected_json.max_tokens=4096（客户端 8 被硬顶覆盖）",
-        injected.get("max_tokens") == 4096,
+        f"落库 injected_json.max_tokens=配置硬顶（{expected_cap}，客户端 8 被覆盖）",
+        expected_cap is not None
+        and injected.get("max_tokens") == expected_cap
+        and injected.get("max_tokens") != 8,
         f"实际: {injected.get('max_tokens')}",
     )
     check(
