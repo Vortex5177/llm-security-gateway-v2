@@ -12,14 +12,17 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_config
 from app.db import init_db
 from app.registry import Registry
-from app.routes import chat, health, models, service, stats
+from app.routes import chat, health, keys, models, service, stats
 from app.sampler import Sampler
 from app.vllm_service import VllmService
+from app import auth
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    if app.state.config.server.auth.enabled:
+        await auth.ensure_bootstrap_key(app.state.session_factory)
     sampler = Sampler(
         app.state.config,
         session_factory=app.state.session_factory,
@@ -45,6 +48,7 @@ def create_app() -> FastAPI:
     application.state.vllm_service = VllmService(config)
     application.include_router(service.router)
     application.include_router(health.router)
+    application.include_router(keys.router)
     application.include_router(models.router)
     application.include_router(chat.router)
     application.include_router(stats.router)

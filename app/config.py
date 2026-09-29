@@ -73,6 +73,24 @@ class SamplingConfig(BaseModel):
     wsl_distro: str = "Ubuntu-24.04"  # gpu_source=wsl 时使用的发行版
 
 
+class SsrfConfig(BaseModel):
+    """看板动态添加 provider 的 SSRF 校验豁免（配置文件的 provider 可信不校验）。
+
+    allow_hosts 条目支持 "host" 或 "host:port" 两种形式；
+    默认空表 = 回环/内网/元数据地址一律拒绝。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    allow_hosts: list[str] = Field(default_factory=list)
+
+
+class SecurityConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ssrf: SsrfConfig = Field(default_factory=SsrfConfig)
+
+
 class LocalVllmConfig(BaseModel):
     """仅由可信本地配置指定目标，网页不能编辑启动命令。
 
@@ -143,6 +161,7 @@ class GatewayConfig(BaseModel):
     fallbacks: dict[str, list[str]] = Field(default_factory=dict)
     injection: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sampling: SamplingConfig = Field(default_factory=SamplingConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
     local_vllm: LocalVllmConfig = Field(default_factory=LocalVllmConfig)
 
 

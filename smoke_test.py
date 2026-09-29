@@ -81,8 +81,19 @@ def _expected_tag_cap(tag: str) -> int | None:
     return cap if isinstance(cap, int) else None
 
 
+def _auth_headers(extra: dict | None = None) -> dict:
+    """鉴权开启（V2 默认）时附带引导 admin key 的 Bearer 头。"""
+    headers = dict(extra or {})
+    key_file = PROJECT_ROOT / "data" / "bootstrap_admin_key.txt"
+    if key_file.is_file():
+        token = key_file.read_text(encoding="utf-8").splitlines()[0].strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def _chat_once(client, base_url: str, body: dict, tag: str | None = None):
-    headers = {"x-gw-tag": tag} if tag else {}
+    headers = _auth_headers({"x-gw-tag": tag} if tag else None)
     return client.post(
         f"{base_url}/v1/chat/completions", json=body, headers=headers, timeout=120.0
     )
@@ -122,7 +133,7 @@ def check_health(client, base_url: str) -> dict:
 
 def check_models(client, base_url: str) -> None:
     try:
-        resp = client.get(f"{base_url}/v1/models", timeout=30.0)
+        resp = client.get(f"{base_url}/v1/models", headers=_auth_headers(), timeout=30.0)
     except Exception as exc:
         check("GET /v1/models 可访问", False, f"请求失败: {exc}")
         return
@@ -309,7 +320,7 @@ def check_deepseek(client, base_url: str, health_providers: dict) -> None:
     stream_body = dict(body, stream=True, max_tokens=32)
     try:
         with client.stream(
-            "POST", f"{base_url}/v1/chat/completions", json=stream_body, timeout=120.0
+            "POST", f"{base_url}/v1/chat/completions", json=stream_body, headers=_auth_headers(), timeout=120.0
         ) as sresp:
             sresp_status = sresp.status_code
             provider_header = sresp.headers.get("x-gw-provider")
@@ -383,7 +394,7 @@ def check_fallback_demo_stream(client, base_url: str) -> None:
     }
     try:
         with client.stream(
-            "POST", f"{base_url}/v1/chat/completions", json=body, timeout=120.0
+            "POST", f"{base_url}/v1/chat/completions", json=body, headers=_auth_headers(), timeout=120.0
         ) as resp:
             status_code = resp.status_code
             attempts = resp.headers.get("x-gw-attempts")
@@ -432,7 +443,7 @@ def check_stream_basic(client, base_url: str, db_path: Path) -> None:
     }
     try:
         with client.stream(
-            "POST", f"{base_url}/v1/chat/completions", json=body, timeout=120.0
+            "POST", f"{base_url}/v1/chat/completions", json=body, headers=_auth_headers(), timeout=120.0
         ) as resp:
             resp_status = resp.status_code
             content_type = resp.headers.get("content-type", "")
@@ -491,7 +502,7 @@ def check_stream_client_abort(client, base_url: str, db_path: Path) -> None:
     got = 0
     try:
         with client.stream(
-            "POST", f"{base_url}/v1/chat/completions", json=body, timeout=120.0
+            "POST", f"{base_url}/v1/chat/completions", json=body, headers=_auth_headers(), timeout=120.0
         ) as resp:
             if resp.status_code != 200:
                 check("中断演示：流式请求建立成功", False, f"HTTP {resp.status_code}")

@@ -3,8 +3,12 @@ server:
   port: 4101                      # V2 端口；避开 V1 :4100 与 4000/8000/8200/6333 既有占用
   upstream_timeout_seconds: 300   # 对齐 LangChain request_timeout 习惯
   auth:
-    enabled: false                # 个人本机默认关闭
-    key_env: GW_API_KEY
+    enabled: true                 # V2 默认开启：/v1/* 需 API Key（/api/keys 管理，DB 存哈希）
+    key_env: GW_API_KEY           # 已废弃（V1 残留字段；V2 用 DB 密钥，勿依赖）
+
+security:
+  ssrf:
+    allow_hosts: []               # 看板添加 provider 的豁免主机（"host" 或 "host:port"）；默认内网全拒
 
 providers:
   local-vllm:

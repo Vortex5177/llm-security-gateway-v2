@@ -1,6 +1,19 @@
-# llm-gateway
+# llm-gateway (V2)
 
-> 通用 LLM 网关 · OpenAI-Compatible · 单用户自托管
+> Enterprise LLM Security Gateway · OpenAI-Compatible · 单用户自托管
+
+V2 = V1 通用 LLM 网关 + 企业 AI 安全能力（分阶段交付，闭环叙事：防护 → 攻击验证 → 规则调优 → 回归测试）。
+
+**M1 · Security Foundation（已交付）**
+
+- **API Key 鉴权**：`server.auth.enabled: true` 时 `/v1/*` 需 `Authorization: Bearer gw_...`；密钥仅存 SHA-256 哈希（明文仅创建时返回一次）；首次启动自动签发引导 admin key（控制台打印 + `data/bootstrap_admin_key.txt`，不入库）
+- **RBAC（从简）**：admin / developer / user 三角色；管理端点（`/api/keys`、`/api/providers*`、`/api/local-vllm*`）仅 admin；每 key 可配 `allowed_models` 模型白名单（别名解析前对客户端请求名生效，越权 403 + 事件）
+- **限流**：内存令牌桶 per key（`rpm_limit`/`burst` 可配，缺省不限），超限 429 + 事件
+- **SSRF 防护**：看板 API 动态添加的 provider 一律校验 base_url——仅 http/https，拒绝回环/内网/链路本地（含云元数据 169.254.169.254）与 `.local/.internal` 主机名；`security.ssrf.allow_hosts` 显式豁免（支持 `host` 或 `host:port`）；配置文件中的 provider 视为可信不校验（不做 DNS 解析，见已知边界）
+- **统一安全事件**：鉴权失败 / 限流 / 模型越权 / SSRF 拦截 / key 与 provider 管理操作全部落 `security_events` 表（event_type/severity/action/source_ip/request_id/...，事件不含密钥与敏感原文；哈希链防篡改字段 M3 启用）
+- 新增端点：`POST /api/keys`（创建，明文仅返回一次）、`GET /api/keys`、`POST /api/keys/{name}/disable`；所有响应带 `X-GW-Request-Id`
+
+**V1 基础能力（继承）**
 
 自托管、OpenAI 协议兼容的薄网关：把本地 vLLM（WSL2）与云端 API（DeepSeek / DashScope）统一到一个入口，提供模型别名解析、服务端回退链、硬顶参数注入、本地模型启停管理与全链路可观测性。
 

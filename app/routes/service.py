@@ -7,7 +7,19 @@ import ipaddress
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app import auth
+
 router = APIRouter(tags=["local-vllm"])
+
+
+async def _assert_admin_when_auth_enabled(request: Request) -> None:
+    """鉴权开启时，服务控制追加 admin 角色要求（本机同源校验之外）。"""
+    if not request.app.state.config.server.auth.enabled:
+        return
+    result = await auth.authenticate(request)
+    if not result.ok:
+        raise HTTPException(401, result.error)
+    auth.require_admin(result)
 
 
 def assert_local_control(request: Request, *, write=False) -> None:
@@ -35,12 +47,14 @@ def assert_local_control(request: Request, *, write=False) -> None:
 @router.get("/api/local-vllm")
 async def local_vllm_status(request: Request):
     assert_local_control(request)
+    await _assert_admin_when_auth_enabled(request)
     view = await request.app.state.vllm_service.status()
     return JSONResponse(view, headers={"Cache-Control": "no-store"})
 
 
 async def _operate(request: Request, action: str):
     assert_local_control(request, write=True)
+    await _assert_admin_when_auth_enabled(request)
     # 不使用动态命令端点；body 最多携带受控的候选模型名。
     try:
         body = await request.json()

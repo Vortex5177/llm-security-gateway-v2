@@ -191,13 +191,13 @@ async def test_create_provider_custom_and_rejects(tmp_path, monkeypatch, config_
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://gw"
         ) as client:
-            # custom 成功：变量名由名称生成
+            # custom 成功：变量名由名称生成（V2：SSRF 校验要求公网地址）
             resp = await client.post(
                 "/api/providers",
                 json={
                     "preset": "custom",
                     "name": "my-gw",
-                    "base_url": "http://127.0.0.1:9999/v1",
+                    "base_url": "https://my-gw.example.com/v1",
                     "api_key": "sk-custom",
                 },
             )
@@ -208,15 +208,15 @@ async def test_create_provider_custom_and_rejects(tmp_path, monkeypatch, config_
             overlay = yaml.safe_load(
                 (tmp_path / "gateway.user.yaml").read_text(encoding="utf-8")
             )
-            assert overlay["providers"]["my-gw"]["base_url"] == "http://127.0.0.1:9999/v1"
+            assert overlay["providers"]["my-gw"]["base_url"] == "https://my-gw.example.com/v1"
 
-            # 重名（overlay 内已有 / 主配置已有）
+            # 重名（overlay 内已有 / 主配置已有；走公网 URL 以免被 SSRF 校验先拦）
             resp = await client.post(
                 "/api/providers",
                 json={
                     "preset": "custom",
                     "name": "my-gw",
-                    "base_url": "http://127.0.0.1:1/v1",
+                    "base_url": "https://dup.example.com/v1",
                     "api_key": "sk-x",
                 },
             )
@@ -226,7 +226,7 @@ async def test_create_provider_custom_and_rejects(tmp_path, monkeypatch, config_
                 json={
                     "preset": "custom",
                     "name": "deepseek",
-                    "base_url": "http://127.0.0.1:1/v1",
+                    "base_url": "https://dup.example.com/v1",
                     "api_key": "sk-x",
                 },
             )

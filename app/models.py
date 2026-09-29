@@ -1,4 +1,4 @@
-"""ORM 模型：RequestLog、GpuSample、EngineSample。"""
+"""ORM 模型：RequestLog、GpuSample、EngineSample、ApiKey、SecurityEvent。"""
 
 from __future__ import annotations
 
@@ -77,3 +77,50 @@ class EngineSample(Base):
     kv_cache_usage_perc: Mapped[float | None] = mapped_column(Float, nullable=True)
     prompt_tokens_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     generation_tokens_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class ApiKey(Base):
+    """网关 API Key（仅存 SHA-256 哈希，永不落明文）。
+
+    role: admin（管理端点）/ developer / user（仅数据平面）；
+    allowed_models 为 JSON 列表，[\"*\"] 表示全部模型；
+    rpm_limit/burst 为 None 表示不限流（burst 缺省与 rpm 相同）。
+    """
+
+    __tablename__ = "api_keys"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256 hex
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    role: Mapped[str] = mapped_column(String(16), default="user")
+    allowed_models: Mapped[str] = mapped_column(Text, default='["*"]')
+    rpm_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    burst: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class SecurityEvent(Base):
+    """统一安全事件模型；prev_hash/hash 为 M3 防篡改哈希链字段（M1 恒空）。"""
+
+    __tablename__ = "security_events"
+
+    event_id: Mapped[str] = mapped_column(String(32), primary_key=True)  # uuid4 hex
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+    key_name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    source_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(48), index=True)
+    severity: Mapped[str] = mapped_column(String(16))  # info/low/medium/high/critical
+    rule_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    action: Mapped[str] = mapped_column(String(16))  # block/redact/audit/deny/allow
+    request_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    resource: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

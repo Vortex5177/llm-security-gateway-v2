@@ -7,11 +7,12 @@ import os
 import re
 import threading
 from typing import Any
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app import audit, auth, routing
 from app.config import (
     ConfigError,
     ENV_FILE,
@@ -26,10 +27,10 @@ from app.config import (
 )
 from app.registry import Registry
 from app.routes.health import check_provider
+from app.security.ssrf import validate_provider_base_url
 
 router = APIRouter(tags=["models"])
 
-ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _env_write_lock = threading.Lock()
 
 PROVIDER_PRESETS: dict[str, str] = {
@@ -42,7 +43,14 @@ PROVIDER_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,31}$")
 
 
 @router.get("/v1/models")
-async def list_models(request: Request) -> dict[str, Any]:
+async def list_models(request: Request):
+    # 鉴权开启时需有效 key（数据平面；模型白名单不限制清单读取）
+    result = await auth.authenticate(request)
+    if not result.ok:
+        return JSONResponse(
+            status_code=401,
+            content=routing.openai_error(result.error or "鉴权失败", type_="authentication_error"),
+        )
     registry = request.app.state.registry
     return {"object": "list", "data": registry.model_list()}
 
@@ -124,13 +132,6 @@ async def model_catalog(request: Request) -> dict[str, Any]:
     }
 
 
-def _assert_local_origin(request: Request) -> None:
-    """跨站防护：带 Origin 的请求必须来自本机（无 Origin = 非浏览器客户端，放行）。"""
-    origin = request.headers.get("origin")
-    if origin and (urlparse(origin).hostname or "").lower() not in ALLOWED_ORIGIN_HOSTS:
-        raise HTTPException(status_code=403, detail="仅允许本机看板调用")
-
-
 def _update_env_file(var_name: str, value: str) -> None:
     """更新 .env 中变量行（保留其他内容，文件不存在则创建）；先写临时文件再原子替换。"""
     pattern = re.compile(rf"^\s*{re.escape(var_name)}\s*=")
@@ -169,7 +170,7 @@ async def set_provider_key(
     media_type = content_type.split(";", 1)[0].strip().lower()
     if media_type != "application/json":
         raise HTTPException(status_code=415, detail="仅接受 application/json 请求")
-    _assert_local_origin(request)
+    await auth.require_admin_or_local_origin(request)
 
     config: GatewayConfig = request.app.state.config
     provider = config.providers.get(name)
@@ -232,7 +233,7 @@ async def create_provider(payload: ProviderPayload, request: Request) -> dict[st
     media_type = content_type.split(";", 1)[0].strip().lower()
     if media_type != "application/json":
         raise HTTPException(status_code=415, detail="仅接受 application/json 请求")
-    _assert_local_origin(request)
+    admin = await auth.require_admin_or_local_origin(request)
 
     preset = payload.preset.strip()
     if preset in PROVIDER_PRESETS:
@@ -259,13 +260,28 @@ async def create_provider(payload: ProviderPayload, request: Request) -> dict[st
             status_code=400, detail=f"未知预设 '{preset}'（可选: {options}）"
         )
 
+    config: GatewayConfig = request.app.state.config
+    # SSRF：仅对经 API 新增的 provider 校验目标地址（配置文件的 provider 可信）
+    ssrf_reason = validate_provider_base_url(base_url, config.security.ssrf.allow_hosts)
+    if ssrf_reason is not None:
+        await audit.emit_event(
+            getattr(request.app.state, "session_factory", None),
+            event_type=audit.EVENT_SSRF_REJECTED,
+            severity="high",
+            action="deny",
+            key=admin.key,
+            source_ip=audit.client_ip(request),
+            resource=base_url,
+            metadata={"preset": preset, "name": name},
+        )
+        raise HTTPException(status_code=400, detail=ssrf_reason)
+
     value = payload.api_key.strip()
     if not value:
         raise HTTPException(status_code=400, detail="密钥不能为空")
     if any(ord(ch) < 32 for ch in value):
         raise HTTPException(status_code=400, detail="密钥不能包含控制字符")
 
-    config: GatewayConfig = request.app.state.config
     if name in config.providers:
         raise HTTPException(
             status_code=409,
@@ -294,6 +310,17 @@ async def create_provider(payload: ProviderPayload, request: Request) -> dict[st
         new_config = _reload_runtime(request.app)
     except ConfigError as exc:
         raise HTTPException(status_code=500, detail=f"配置重载失败: {exc}") from exc
+
+    await audit.emit_event(
+        getattr(request.app.state, "session_factory", None),
+        event_type=audit.EVENT_PROVIDER_CREATED,
+        severity="info",
+        action="allow",
+        key=admin.key,
+        source_ip=audit.client_ip(request),
+        resource=name,
+        metadata={"base_url": base_url, "preset": preset},
+    )
 
     transport = getattr(request.app.state, "http_transport", None)
     check = await check_provider(new_config.providers[name], transport)
