@@ -2,18 +2,18 @@
 
 > Enterprise LLM Security Gateway · OpenAI-Compatible · 单用户自托管
 
-V2 = V1 通用 LLM 网关 + 企业 AI 安全能力（分阶段交付，闭环叙事：防护 → 攻击验证 → 规则调优 → 回归测试）。
+V2 = V1 通用 LLM 网关 + 企业 AI 安全能力，闭环叙事：防护 → 攻击验证 → 规则调优 → 回归测试。
 
-**M1 · Security Foundation（已交付）**
+**接入安全**
 
 - **API Key 鉴权**：`server.auth.enabled: true` 时 `/v1/*` 需 `Authorization: Bearer gw_...`；密钥仅存 SHA-256 哈希（明文仅创建时返回一次）；首次启动自动签发引导 admin key（控制台打印 + `data/bootstrap_admin_key.txt`，不入库）
 - **RBAC（从简）**：admin / developer / user 三角色；管理端点（`/api/keys`、`/api/providers*`、`/api/local-vllm*`）仅 admin；每 key 可配 `allowed_models` 模型白名单（别名解析前对客户端请求名生效，越权 403 + 事件）
 - **限流**：内存令牌桶 per key（`rpm_limit`/`burst` 可配，缺省不限），超限 429 + 事件
 - **SSRF 防护**：看板 API 动态添加的 provider 一律校验 base_url——仅 http/https，拒绝回环/内网/链路本地（含云元数据 169.254.169.254）与 `.local/.internal` 主机名；`security.ssrf.allow_hosts` 显式豁免（支持 `host` 或 `host:port`）；配置文件中的 provider 视为可信不校验（不做 DNS 解析，见已知边界）
-- **统一安全事件**：鉴权失败 / 限流 / 模型越权 / SSRF 拦截 / key 与 provider 管理操作全部落 `security_events` 表（event_type/severity/action/source_ip/request_id/...，事件不含密钥与敏感原文；哈希链防篡改字段 M3 启用）
+- **统一安全事件**：鉴权失败 / 限流 / 模型越权 / SSRF 拦截 / key 与 provider 管理操作全部落 `security_events` 表（event_type/severity/action/source_ip/request_id/...，事件不含密钥与敏感原文；防篡改哈希链见「安全运营」一节）
 - 新增端点：`POST /api/keys`（创建，明文仅返回一次）、`GET /api/keys`、`POST /api/keys/{name}/disable`；所有响应带 `X-GW-Request-Id`
 
-**M2 · Content Security（已交付）**
+**内容安全**
 
 - **策略引擎外置**：`config/security.yaml` 定义规则（id/检测器/pattern/severity/action/owasp），动作三档 `block / redact / audit`；默认全 audit 观察误报，`config/security.strict-demo.yaml` 为演示用收紧配置（secret→block、PII→redact）；同文本多命中按 block > redact > audit 裁决
 - **请求护栏**：扫描全部 message 文本（含 content parts）；block → 400 `content_policy_error`；redact → 占位符替换（`[REDACTED_PII_PHONE_1]`，llm-guard 模式保句子结构）后放行；audit → 仅记事件
@@ -22,15 +22,15 @@ V2 = V1 通用 LLM 网关 + 企业 AI 安全能力（分阶段交付，闭环叙
 - **事件纪律**：pii/secret 命中只记 rule_id 与 span、绝不记原文；injection 命中记截断预览；每条规则带 OWASP LLM Top 10 映射
 - 良性基线：默认规则集对 50 条 V1 真实流量抽样误报率 0%（`evaluation/export_benign.py` 可复跑）
 
-**M3 · Security Operations（已交付）**
+**安全运营**
 
 - **防篡改审计链**：`security_events` 每条记录 `hash = sha256(prev_hash + canonical_json)`，全局锁串行写入保证链序；`verify_audit_chain()`（CLI `python -m app.audit verify` 或 `GET /api/security/verify`）可定位内容篡改与删行；已知边界：链尾删除需外部 checkpoint（future work）
 - **安全运营 API**：`GET /api/security/events`（severity/type/rule_id/days 过滤）、`GET /api/security/summary`（总量/分布/Top 规则/最近事件）、`GET /api/security/verify`（均仅 admin 或本机看板）
 - **看板 Security 页**：安全事件/高危/阻断/脱敏卡片、类型与级别分布图、Top 规则、最近事件表、一键链校验；页首 API Key 输入（localStorage）供管理接口调用
 
-**M4 · Red Team / Evaluation（已交付）**
+**红队评测**
 
-- **数据集**：`evaluation/datasets/` 攻击集 64 条（指令覆盖中英 / 系统提示提取 / 角色操纵 / 越狱关键词 / 隐藏字符 / PII / Secret，逐条带 `expected_rules` 标签与 OWASP 归类）+ 良性集 80 条（V1 真实流量回放 + 手工构造，含 `fp_trap` 陷阱标注）；`known_gap` 显式声明检测缺口（base64 编码绕过属模型层）
+- **数据集**：`evaluation/datasets/` 攻击集 65 条（指令覆盖中英 / 系统提示提取 / 角色操纵 / 越狱关键词 / 隐藏字符 / 语义越狱 / PII / Secret，逐条带 `expected_rules` 标签与 OWASP 归类）+ 良性集 80 条（V1 真实流量回放 50 + 手工陷阱 30，含 `fp_trap` 标注）；`known_gap` 2 条显式声明检测缺口（base64 编码绕过与 garak AntiDAN 语义越狱，属模型层）
 - **对账评测管线**：`evaluation/run_eval.py` 打真实网关 → 按 `X-GW-Request-Id` 关联 `security_events` → 与数据集 ground truth **三方对账**，输出检出率/阻断率/误报率/按规则召回矩阵（JSON + Markdown 落 `evaluation/reports/`）；请求侧误报与响应侧模型输出异常分列，不夸大指标
 - **闭环验证**（默认 audit 策略）：Round1 检出 1.0 / 误报 0.013 → 定位规则缺口（phone 数字边界、隐藏字符漏 U+FFFC/CGJ、系统提示提取漏 the/中文倒序、越狱关键词 CJK `\b` 失效）→ 扩展规则 → Round2 检出 1.0 / 误报 0.0；strict-demo 策略下 secret→block，阻断率 0.19（=12 secret/63 可检出，符合仅 block secret 的设计）
 - **回归测试**：`tests/security/test_dataset_regression.py` 引擎级回放全量样本（攻击必命中期望规则、良性零命中、known_gap 受控 ≤5 且确实检不出），保证旧漏洞不复发
@@ -40,7 +40,7 @@ V2 = V1 通用 LLM 网关 + 企业 AI 安全能力（分阶段交付，闭环叙
 
 > 复跑评测：网关以目标策略启动后 `python evaluation/run_eval.py --tag <name>`；promptfoo：`python evaluation/build_promptfoo_config.py` 后 `npx promptfoo eval -c evaluation/promptfooconfig.yaml`（需设 `GW_ADMIN_KEY`）。
 
-**M5 · Model-Assisted Audit（已交付）**
+**模型辅助审计**
 
 - **CPU 分类器异步审计**：`app/security/model_audit.py` 离线批处理扫 `request_logs`（不进请求路径，不扰动稳定服务），对每条 prompt 重算规则判定并跑模型分类，对比落 `model_audit_results` 表（不存 prompt 原文，仅 sha256 digest）
 - **分类器可插拔**：真实 `PromptGuardOnnxClassifier`（PromptGuard 2 86M ONNX，onnxruntime/transformers 为**可选依赖**，懒加载，缺失时显式报错不静默降级）+ `StubInjectionClassifier`（确定性关键词桩，无模型时演示管线，报告明标非真实模型）；遵守“不引重型依赖”：模型依赖不入网关运行时 venv
@@ -52,8 +52,6 @@ V2 = V1 通用 LLM 网关 + 企业 AI 安全能力（分阶段交付，闭环叙
 **V1 基础能力（继承）**
 
 自托管、OpenAI 协议兼容的薄网关：把本地 vLLM（WSL2）与云端 API（DeepSeek / DashScope）统一到一个入口，提供模型别名解析、服务端回退链、硬顶参数注入、本地模型启停管理与全链路可观测性。
-
-## ![](C:\Users\29461\Documents\Qoder\2026-09-16\chat-1\屏幕截图%202026-09-18%20161954.png)
 
 ## 架构
 
@@ -147,11 +145,11 @@ wsl -d Ubuntu-24.04 -- /opt/scripts/start-vllm.sh
 ## 测试与验收
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest                       # 845 个单元/安全测试（上游用 MockTransport stub；含数据集回归 144 + garak 对账 5）
+.\.venv\Scripts\python.exe -m pytest                       # 858 个单元/安全测试（上游用 MockTransport stub；含数据集回归 144 + garak 对账 7）
 .\.venv\Scripts\python.exe smoke_test.py                   # 38 项端到端检查（真调本地 vLLM）
 .\.venv\Scripts\python.exe smoke_test.py --fallback-demo   # 9 项回退链检查（先以 gateway.fallback_demo.yaml 在 :4101 启动演示网关）
 
-# 安全评测（M4）——需网关已以目标策略启动在 :4101
+# 安全评测——需网关已以目标策略启动在 :4101
 .\.venv\Scripts\python.exe evaluation/run_eval.py --tag round1              # 三方对账评测，报告落 evaluation/reports/
 .\.venv\Scripts\python.exe evaluation/build_promptfoo_config.py            # 生成 promptfoo 配置
 npx --yes promptfoo eval -c evaluation/promptfooconfig.yaml                # CI 式回归（需设 GW_ADMIN_KEY）
