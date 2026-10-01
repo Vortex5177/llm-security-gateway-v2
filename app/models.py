@@ -12,6 +12,21 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def iso_z(dt: datetime | None) -> str | None:
+    """naive/aware UTC datetime → 带 Z 的 ISO-8601（毫秒）；前端 new Date 可正确转本地时区。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    raw = dt.isoformat()
+    if "." in raw:
+        head, frac = raw.split(".", 1)
+        raw = f"{head}.{(frac + '000')[:3]}"
+    else:
+        raw += ".000"
+    return raw + "Z"
+
+
 class Base(DeclarativeBase):
     pass
 

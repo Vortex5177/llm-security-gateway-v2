@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app import audit, auth
+from app.models import iso_z
 
 router = APIRouter(tags=["keys"])
 
@@ -37,8 +38,8 @@ def _key_view(row: Any) -> dict[str, Any]:
         "rpm_limit": row.rpm_limit,
         "burst": row.burst,
         "disabled": row.disabled,
-        "created_at": row.created_at.isoformat() if row.created_at else None,
-        "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+        "created_at": iso_z(row.created_at),
+        "last_used_at": iso_z(row.last_used_at),
     }
 
 

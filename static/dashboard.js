@@ -23,6 +23,7 @@ apiKeyInput.value = localStorage.getItem("gw_api_key") || "";
 apiKeyInput.addEventListener("change", () => {
   localStorage.setItem("gw_api_key", apiKeyInput.value.trim());
   loadSecurity().catch(() => {});
+  loadKeys().catch(() => {});
 });
 
 function gfetch(url, opts) {
@@ -242,6 +243,14 @@ function keyCellHtml(p) {
 
 function renderCatalog(data) {
   const def = data.aliases && data.aliases["default"];
+  // 模型白名单下拉选项：模型名 + 别名（RBAC 检查的是客户端请求名，别名也是合法条目）
+  const optionNames = [];
+  (data.models || []).forEach((m) => {
+    optionNames.push(m.id);
+    (m.aliases || []).forEach((a) => optionNames.push(a));
+  });
+  state.modelOptions = optionNames.filter((v, i) => optionNames.indexOf(v) === i);
+  renderKeyModelOptions();
   document.getElementById("catalog-hint").textContent =
     def ? "· 默认 default → " + def : "";
 
@@ -693,6 +702,158 @@ document.getElementById("sec-verify").addEventListener("click", async () => {
   }
 });
 
+/* ---- API Keys 管理（/api/keys，需 admin key） ---- */
+
+function renderKeys(keys) {
+  const rows = keys.map((k) => {
+    const roleCls = k.role === "admin" ? " cloud" : k.role === "developer" ? " local" : "";
+    const role = '<span class="badge' + roleCls + '">' + esc(k.role) + "</span>";
+    const status = k.disabled
+      ? '<span class="status upstream_error">已禁用</span>'
+      : '<span class="status ok">启用</span>';
+    const limits = k.rpm_limit == null ? "不限"
+      : k.rpm_limit + "/min" + (k.burst != null ? " · burst " + k.burst : "");
+    const models = (k.allowed_models || []).join(", ") || "—";
+    const action = k.disabled
+      ? '<span class="muted">—</span>'
+      : '<button class="mini" type="button" data-act="disable" data-name="' + esc(k.name) + '">禁用</button>';
+    return "<tr><td>" + esc(k.name) + "</td><td>" + role + '</td><td class="cellwrap">' + esc(models) +
+      "</td><td>" + esc(limits) + "</td><td>" + status + "</td><td>" + fmtTime(k.last_used_at) + "</td><td>" + action + "</td></tr>";
+  });
+  document.getElementById("keys-body").innerHTML = rows.join("") ||
+    '<tr><td colspan="7" class="muted">还没有任何 Key</td></tr>';
+}
+
+async function loadKeys() {
+  try {
+    const resp = await gfetch("/api/keys");
+    if (resp.status === 401 || resp.status === 403) {
+      document.getElementById("keys-body").innerHTML =
+        '<tr><td colspan="7" class="muted">需要 admin API Key（页首输入后点刷新）</td></tr>';
+      return;
+    }
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const data = await resp.json();
+    renderKeys(data.keys || []);
+  } catch (err) {
+    document.getElementById("keys-body").innerHTML =
+      '<tr><td colspan="7" class="muted">加载失败：' + esc(err.message) + "</td></tr>";
+  }
+}
+
+function keysHintError(text) {
+  const el = document.getElementById("keys-hint");
+  el.textContent = text || "";
+  el.style.color = text ? "var(--err)" : "";
+}
+
+document.getElementById("keys-refresh").addEventListener("click", () => {
+  keysHintError("");
+  loadKeys();
+});
+
+/* 白名单多选：role 式下拉点选，已在名单=取消（选项前缀 ✓ 提示）；名单以填写框为准（可手改/手输目录外名字） */
+function keyModelsFromInput() {
+  return document.getElementById("key-models").value
+    .split(/[，,]+/).map((s) => s.trim()).filter(Boolean);
+}
+
+function renderKeyModelOptions() {
+  const sel = document.getElementById("key-models-select");
+  const chosen = keyModelsFromInput();
+  const all = (state.modelOptions || []).concat(
+    chosen.filter((m) => (state.modelOptions || []).indexOf(m) === -1));
+  sel.innerHTML = '<option value="">＋ 从目录添加模型…</option>' +
+    all.map((m) => '<option value="' + esc(m) + '">' +
+      (chosen.indexOf(m) !== -1 ? "✓ " : "") + esc(m) + "</option>").join("");
+  sel.value = "";
+}
+
+document.getElementById("key-models-select").addEventListener("change", (event) => {
+  const value = event.target.value;
+  if (!value) return;
+  const list = keyModelsFromInput();
+  const i = list.indexOf(value);
+  if (i === -1) list.push(value); else list.splice(i, 1);
+  document.getElementById("key-models").value = list.join(", ");
+  renderKeyModelOptions();
+});
+document.getElementById("key-models").addEventListener("change", renderKeyModelOptions);
+
+document.getElementById("key-create").addEventListener("click", async () => {
+  const btn = document.getElementById("key-create");
+  const errBox = document.getElementById("key-add-err");
+  errBox.textContent = "";
+  keysHintError("");
+  const name = document.getElementById("key-name").value.trim();
+  if (!name) { errBox.textContent = "名称不能为空"; return; }
+  const body = { name: name, role: document.getElementById("key-role").value };
+  const models = keyModelsFromInput();
+  if (models.length) body.allowed_models = models;
+  const rpm = document.getElementById("key-rpm").value.trim();
+  if (rpm) body.rpm_limit = Number(rpm);
+  const burst = document.getElementById("key-burst").value.trim();
+  if (burst) body.burst = Number(burst);
+  btn.disabled = true;
+  try {
+    const resp = await gfetch("/api/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (resp.status === 401 || resp.status === 403) { errBox.textContent = "需要 admin API Key（页首输入）"; return; }
+    if (!resp.ok) {
+      let detail = "HTTP " + resp.status;
+      try { detail = (await resp.json()).detail || detail; } catch (e) { /* 响应非 JSON */ }
+      errBox.textContent = detail;
+      return;
+    }
+    const data = await resp.json();
+    document.getElementById("key-created-value").textContent = data.api_key || "";
+    document.getElementById("key-created").hidden = false;
+    document.getElementById("key-copy").textContent = "复制";
+    ["key-name", "key-models", "key-rpm", "key-burst"].forEach((id) => { document.getElementById(id).value = ""; });
+    renderKeyModelOptions();
+    loadKeys();
+  } catch (err) {
+    errBox.textContent = "网络错误：" + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("key-copy").addEventListener("click", async () => {
+  const text = document.getElementById("key-created-value").textContent;
+  const btn = document.getElementById("key-copy");
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "已复制";
+  } catch (e) {
+    btn.textContent = "请手动选中复制";
+  }
+});
+
+document.getElementById("keys-body").addEventListener("click", async (event) => {
+  const btn = event.target.closest('button[data-act="disable"]');
+  if (!btn) return;
+  const name = btn.dataset.name;
+  if (!confirm("确认禁用 Key「" + name + "」？使用该 Key 的请求将立即 401。")) return;
+  btn.disabled = true;
+  try {
+    const resp = await gfetch("/api/keys/" + encodeURIComponent(name) + "/disable", { method: "POST" });
+    if (!resp.ok) {
+      let detail = "HTTP " + resp.status;
+      try { detail = (await resp.json()).detail || detail; } catch (e) { /* 响应非 JSON */ }
+      keysHintError(detail);
+    }
+  } catch (err) {
+    keysHintError("网络错误：" + err.message);
+  } finally {
+    btn.disabled = false;
+    loadKeys();
+  }
+});
+
 document.getElementById("providers-body").addEventListener("change", (event) => {
   const sel = event.target.closest('select[data-act="add-preset"]');
   if (!sel) return;
@@ -737,6 +898,7 @@ document.getElementById("refresh").addEventListener("click", () => {
   loadCatalog().catch(showError);
   loadLocalService();
   loadSecurity().catch(() => {});
+  loadKeys().catch(() => {});
 });
 
 pollLocalService();
@@ -744,4 +906,5 @@ load().catch(showError);
 // 目录含 provider 连通性探测：仅页面加载/手动刷新时拉取，不随 30s 轮询
 loadCatalog().catch(showError);
 loadSecurity().catch(() => {});
+loadKeys().catch(() => {});
 setInterval(() => load().catch(() => {}), 30000);

@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from app import audit, auth
 from app.db import SessionLocal
-from app.models import RequestLog, SecurityEvent
+from app.models import RequestLog, SecurityEvent, iso_z
 
 router = APIRouter(tags=["security"])
 
@@ -23,7 +23,7 @@ def _factory(request: Request):
 def _event_view(row: SecurityEvent, *, with_metadata: bool = True) -> dict[str, Any]:
     view: dict[str, Any] = {
         "event_id": row.event_id,
-        "ts": row.ts.isoformat() if row.ts else None,
+        "ts": iso_z(row.ts),
         "event_type": row.event_type,
         "severity": row.severity,
         "action": row.action,
