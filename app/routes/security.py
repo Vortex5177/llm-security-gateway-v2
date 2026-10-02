@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from app import audit, auth
 from app.db import SessionLocal
 from app.models import RequestLog, SecurityEvent, iso_z
+from app.security import policy as policy_mod
 
 router = APIRouter(tags=["security"])
 
@@ -145,3 +146,40 @@ async def security_summary(
 async def verify_audit_chain(request: Request) -> dict[str, Any]:
     await auth.require_admin_or_local_origin(request)
     return await audit.verify_chain(_factory(request))
+
+
+@router.get("/api/security/policy")
+async def security_policy_view(request: Request) -> dict[str, Any]:
+    """当前生效的安全策略档位（启动时加载的那份；本机看板无需 admin）。"""
+    await auth.require_admin_or_local_origin(request)
+    engine = getattr(request.app.state, "security_engine", None)
+    policy = getattr(engine, "policy", None)
+    if policy is None:
+        return {
+            "enabled": False,
+            "source": None,
+            "mode": "off",
+            "default_action": None,
+            "rules": 0,
+            "actions": {},
+        }
+    actions: dict[str, int] = {}
+    for rule in policy.rules:
+        if not rule.enabled:
+            continue
+        act = policy_mod.rule_action(policy, rule)
+        actions[act] = actions.get(act, 0) + 1
+    source = policy_mod.policy_source_path()
+    try:
+        source_str = str(source.relative_to(policy_mod.PROJECT_ROOT))
+    except ValueError:
+        source_str = str(source)
+    return {
+        "enabled": True,
+        "source": source_str,
+        # 有任何 block 动作即视为严格档（考卷密钥题只在严格档变绿）
+        "mode": "strict" if actions.get("block", 0) > 0 else "audit",
+        "default_action": policy.default_action,
+        "rules": len(policy.rules),
+        "actions": actions,
+    }

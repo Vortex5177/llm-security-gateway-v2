@@ -62,9 +62,14 @@ class SecurityPolicy(BaseModel):
     rules: list[RuleConfig] = Field(default_factory=list)
 
 
+def policy_source_path() -> Path:
+    """环境变量指向（或默认）的策略文件路径；启动加载与档位查询共用同一解析。"""
+    return Path(os.environ.get("GATEWAY_SECURITY_CONFIG") or DEFAULT_POLICY_PATH)
+
+
 def load_policy(path: str | os.PathLike[str] | None = None) -> SecurityPolicy | None:
     """加载 security.yaml；文件不存在返回 None（引擎不启用，等价于 V1 行为）。"""
-    resolved = Path(path or os.environ.get("GATEWAY_SECURITY_CONFIG") or DEFAULT_POLICY_PATH)
+    resolved = Path(path or policy_source_path())
     if not resolved.is_file():
         return None
     raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))

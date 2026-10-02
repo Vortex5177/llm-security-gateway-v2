@@ -673,6 +673,26 @@ function renderSecTables(d) {
     '<tr><td colspan="6" class="muted">窗口内无安全事件</td></tr>';
 }
 
+async function loadPolicyBadge() {
+  const el = document.getElementById("policy-badge");
+  if (!el) return;
+  try {
+    const resp = await gfetch("/api/security/policy");
+    if (!resp.ok) { el.textContent = ""; return; }
+    const d = await resp.json();
+    if (!d.enabled) {
+      el.textContent = "策略关闭";
+      el.className = "badge";
+      return;
+    }
+    const strict = d.mode === "strict";
+    el.textContent = (strict ? "严格档" : "宽松档") + " · " + d.source;
+    el.className = "badge" + (strict ? " local" : "");
+  } catch {
+    el.textContent = "";
+  }
+}
+
 async function loadSecurity() {
   const resp = await gfetch("/api/security/summary?days=" + state.days);
   if (resp.status === 401 || resp.status === 403) {
@@ -898,6 +918,7 @@ document.getElementById("refresh").addEventListener("click", () => {
   loadCatalog().catch(showError);
   loadLocalService();
   loadSecurity().catch(() => {});
+  loadPolicyBadge().catch(() => {});
   loadKeys().catch(() => {});
 });
 
@@ -906,5 +927,6 @@ load().catch(showError);
 // 目录含 provider 连通性探测：仅页面加载/手动刷新时拉取，不随 30s 轮询
 loadCatalog().catch(showError);
 loadSecurity().catch(() => {});
+loadPolicyBadge().catch(() => {});
 loadKeys().catch(() => {});
 setInterval(() => load().catch(() => {}), 30000);
