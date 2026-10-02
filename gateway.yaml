@@ -1,5 +1,5 @@
 server:
-  host: 127.0.0.1
+  host: 0.0.0.0                  # 0.0.0.0 = 局域网可达（手机/其他设备）；本机访问不受影响
   port: 4101                      # V2 端口；避开 V1 :4100 与 4000/8000/8200/6333 既有占用
   upstream_timeout_seconds: 300   # 对齐 LangChain request_timeout 习惯
   auth:
@@ -42,7 +42,7 @@ injection:                         # 固定硬顶（override），tag 精确匹�
   speclens/scan: { max_tokens: 32768, repetition_penalty: 1.05 }
 
 local_vllm:
-  enabled: true
+  enabled: true                  # 服务控制接口由 main.py 管理面回环来源隔离保护（非本机 403），本机看板可启停
   provider: local-vllm
   wsl_distro: Ubuntu-24.04
   start_script: /opt/scripts/start-vllm.sh

@@ -14,5 +14,5 @@ if (-not (Test-Path $Python)) {
 }
 
 Set-Location $Root
-Write-Host "Starting LLM Gateway (V2) on http://127.0.0.1:4101 ..." -ForegroundColor Green
-& $Python -m uvicorn app.main:app --host 127.0.0.1 --port 4101
+Write-Host "Starting LLM Gateway (V2) on http://0.0.0.0:4101 (LAN reachable) ..." -ForegroundColor Green
+& $Python -m uvicorn app.main:app --host 0.0.0.0 --port 4101

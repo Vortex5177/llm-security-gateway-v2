@@ -235,8 +235,8 @@ def _collect_reference_errors(cfg: GatewayConfig) -> list[str]:
                 )
     local = cfg.local_vllm
     if local.enabled:
-        if cfg.server.host not in {"127.0.0.1", "localhost", "::1"}:
-            errors.append("local_vllm: 服务控制仅允许 Gateway 监听本机回环地址")
+        # 注：服务控制接口的安全边界已下沉到运行时——main.py 的 admin_loopback_guard
+        # 按“请求来源是否本机回环”拦截，不再与 server.host 监听地址绑定。
         provider = cfg.providers.get(local.provider)
         if provider is None:
             errors.append("local_vllm.provider 引用了不存在的 provider")
