@@ -98,7 +98,7 @@ python -m venv .venv
 # 3. 本地模型（可选）：配置 gateway.yaml 的 local_vllm 段后可在看板一键启停/切换，或直接 WSL 内启动（端口 8200）
 wsl -d Ubuntu-24.04 -- /opt/scripts/start-vllm.sh
 
-# 4. 启动网关
+# 4. 启动网关（内置默认安全档 security.strict-demo；换档：先 $env:GATEWAY_SECURITY_CONFIG = "config/security.yaml" 再启动）
 .\start.ps1
 
 # 5. 验证
