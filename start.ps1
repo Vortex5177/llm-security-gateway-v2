@@ -22,5 +22,14 @@ if (-not $env:GATEWAY_SECURITY_CONFIG) {
     Write-Host "[INFO] GATEWAY_SECURITY_CONFIG not set, defaulting to config/security.strict-demo.yaml" -ForegroundColor DarkGray
 }
 
-Write-Host "Starting LLM Gateway (V2) on http://0.0.0.0:4101 (LAN reachable) ..." -ForegroundColor Green
+Write-Host "Starting LLM Gateway (V2) on port 4101 ..." -ForegroundColor Green
+Write-Host "  本机看板:   http://127.0.0.1:4101/" -ForegroundColor Cyan
+# 排除回环/链路本地/虚拟网卡（WSL vEthernet、VMware VMnet 的 IP 手机访问不通），剩下的才是真局域网可达地址
+$lanIps = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" -and
+                   $_.InterfaceAlias -notlike "vEthernet*" -and $_.InterfaceAlias -notlike "VMware*" } |
+    Select-Object -ExpandProperty IPAddress -Unique
+foreach ($ip in $lanIps) {
+    Write-Host "  局域网设备: http://${ip}:4101/   (手机/其他设备)" -ForegroundColor Cyan
+}
 & $Python -m uvicorn app.main:app --host 0.0.0.0 --port 4101
