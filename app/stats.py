@@ -197,7 +197,7 @@ async def collect_stats(
                 await session.execute(
                     text(
                         f"""SELECT id, created_at, tag, requested_model, resolved_model,
-                               provider, streamed, prompt_tokens, completion_tokens,
+                               provider, key_name, streamed, prompt_tokens, completion_tokens,
                                total_tokens, latency_ms, ttft_ms, output_tps, status,
                                http_status, attempts, fallback_used
                         FROM request_logs WHERE created_at >= :since{filter_sql}
@@ -266,6 +266,7 @@ async def collect_stats(
             "requested_model": r["requested_model"],
             "resolved_model": r["resolved_model"],
             "provider": r["provider"],
+            "key_name": r["key_name"],
             "streamed": bool(r["streamed"]),
             "prompt_tokens": int(r["prompt_tokens"] or 0),
             "completion_tokens": int(r["completion_tokens"] or 0),

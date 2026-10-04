@@ -190,7 +190,7 @@ function renderCharts(data) {
 function renderRecent(rows) {
   const body = document.getElementById("recent-body");
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="9" class="muted">窗口内暂无请求</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" class="muted">窗口内暂无请求</td></tr>';
     return;
   }
   const known = ["ok", "upstream_error", "client_abort", "timeout"];
@@ -198,10 +198,11 @@ function renderRecent(rows) {
     .map((r) => {
       const cls = known.indexOf(r.status) !== -1 ? r.status : "timeout";
       const tagCell = r.tag ? esc(r.tag) : '<span class="muted">—</span>';
+      const keyCell = r.key_name ? esc(r.key_name) : '<span class="muted">—</span>';
       const modelCell = esc(r.resolved_model) + (r.fallback_used ? ' <span class="muted">fallback</span>' : "");
       const tokenCell = fmtInt(r.total_tokens) + ' <span class="muted">(' + fmtInt(r.prompt_tokens) + "+" + fmtInt(r.completion_tokens) + ")</span>";
       return (
-        "<tr><td>" + fmtTime(r.ts) + "</td><td>" + tagCell + "</td><td>" + modelCell +
+        "<tr><td>" + fmtTime(r.ts) + "</td><td>" + tagCell + "</td><td>" + keyCell + "</td><td>" + modelCell +
         "</td><td>" + tokenCell + "</td><td>" + fmtMs(r.latency_ms) + "</td><td>" + fmtMs(r.ttft_ms) +
         "</td><td>" + fmtTps(r.output_tps) +
         '</td><td><span class="status ' + cls + '">' + esc(r.status) + "</span></td><td>" + r.attempts + "</td></tr>"
@@ -664,14 +665,39 @@ function renderSecTables(d) {
     "<tr><td>" + esc(r.rule_id) + "</td><td>" + fmtInt(r.count) + "</td></tr>");
   document.getElementById("sec-rules-body").innerHTML = rules.join("") ||
     '<tr><td colspan="2" class="muted">窗口内无规则命中</td></tr>';
-  const rows = d.recent.map((e) => {
+}
+
+function renderSecEventsTable(events) {
+  const rows = events.map((e) => {
     const sev = '<span class="status ' + (e.severity === "critical" || e.severity === "high" ? "upstream_error" : e.severity === "medium" ? "client_abort" : "ok") + '">' + esc(e.severity) + "</span>";
     return "<tr><td>" + fmtTime(e.ts) + "</td><td>" + esc(e.event_type) + "</td><td>" + sev +
-      "</td><td>" + esc(e.action) + "</td><td>" + esc(e.rule_id || "—") + "</td><td>" + esc(e.source_ip || "—") + "</td></tr>";
+      "</td><td>" + esc(e.action) + "</td><td>" + esc(e.rule_id || "—") + "</td><td>" + esc(e.key_name || "—") + "</td><td>" + esc(e.source_ip || "—") + "</td></tr>";
   });
   document.getElementById("sec-events-body").innerHTML = rows.join("") ||
-    '<tr><td colspan="6" class="muted">窗口内无安全事件</td></tr>';
+    '<tr><td colspan="7" class="muted">窗口内无安全事件</td></tr>';
 }
+
+/* 事件列表数据源：/api/security/events（支持 key_name 服务端筛选，limit 500）；
+   summary.recent 固定 20 条无法支撑筛选，故单独拉取 */
+async function loadSecurityEvents() {
+  const sel = document.getElementById("sec-key");
+  const key = sel ? sel.value : "";
+  let url = "/api/security/events?days=" + state.days + "&limit=100";
+  if (key) url += "&key_name=" + encodeURIComponent(key);
+  const resp = await gfetch(url);
+  if (resp.status === 401 || resp.status === 403) {
+    document.getElementById("sec-events-body").innerHTML =
+      '<tr><td colspan="7" class="muted">需要 admin API Key（页首输入）</td></tr>';
+    return;
+  }
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  const data = await resp.json();
+  renderSecEventsTable(data.events || []);
+}
+
+document.getElementById("sec-key").addEventListener("change", () => {
+  loadSecurityEvents().catch(() => {});
+});
 
 async function loadPolicyBadge() {
   const el = document.getElementById("policy-badge");
@@ -705,6 +731,7 @@ async function loadSecurity() {
   renderSecCards(data);
   renderSecCharts(data);
   renderSecTables(data);
+  loadSecurityEvents().catch(() => {});
 }
 
 document.getElementById("sec-verify").addEventListener("click", async () => {
@@ -744,6 +771,18 @@ function renderKeys(keys) {
     '<tr><td colspan="7" class="muted">还没有任何 Key</td></tr>';
 }
 
+/* 事件筛选下拉的 key 名选项随 Keys 列表填充（本机看板免 admin）；保留用户当前选择 */
+function renderSecKeyOptions(keys) {
+  const sel = document.getElementById("sec-key");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">全部用户</option><option value="-">（无 key·系统）</option>' +
+    keys.map((k) => '<option value="' + esc(k.name) + '">' + esc(k.name) + "</option>").join("");
+  for (let i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === prev) { sel.value = prev; break; }
+  }
+}
+
 async function loadKeys() {
   try {
     const resp = await gfetch("/api/keys");
@@ -755,6 +794,7 @@ async function loadKeys() {
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const data = await resp.json();
     renderKeys(data.keys || []);
+    renderSecKeyOptions(data.keys || []);
   } catch (err) {
     document.getElementById("keys-body").innerHTML =
       '<tr><td colspan="7" class="muted">加载失败：' + esc(err.message) + "</td></tr>";

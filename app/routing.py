@@ -121,6 +121,7 @@ async def execute_chat(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
+    key_name: str | None = None,  # 归属：发起方 key 名（鉴权关闭/本机模式为 None）
 ) -> ChatResult:
     """按候选链逐个尝试上游；成功即返回，全失败返回最后错误。成功与失败都落库。"""
     requested_model = str(body.get("model") or "")
@@ -134,6 +135,7 @@ async def execute_chat(
         await _write_log(
             session_factory,
             tag=tag,
+            key_name=key_name,
             requested_model=requested_model,
             resolved_model="",
             provider="",
@@ -174,6 +176,7 @@ async def execute_chat(
             await _write_log(
                 session_factory,
                 tag=tag,
+                key_name=key_name,
                 requested_model=requested_model,
                 resolved_model=candidate.name,
                 provider=candidate.provider,
@@ -209,6 +212,7 @@ async def execute_chat(
     await _write_log(
         session_factory,
         tag=tag,
+        key_name=key_name,
         requested_model=requested_model,
         resolved_model=candidates[0].name,
         provider=last_provider or candidates[0].provider,
@@ -239,6 +243,7 @@ async def execute_chat_stream(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
+    key_name: str | None = None,  # 归属：发起方 key 名（鉴权关闭/本机模式为 None）
 ) -> StreamResult:
     """流式版 execute_chat：等首块到达才提交；首块前失败走回退；生成结束后落库。
 
@@ -256,6 +261,7 @@ async def execute_chat_stream(
         await _write_log(
             session_factory,
             tag=tag,
+            key_name=key_name,
             requested_model=requested_model,
             resolved_model="",
             provider="",
@@ -312,6 +318,7 @@ async def execute_chat_stream(
         await _write_log(
             session_factory,
             tag=tag,
+            key_name=key_name,
             requested_model=requested_model,
             resolved_model=candidates[0].name,
             provider=last_provider or candidates[0].provider,
@@ -380,6 +387,7 @@ async def execute_chat_stream(
                     await _write_log(
                         session_factory,
                         tag=tag,
+                        key_name=key_name,
                         requested_model=requested_model,
                         resolved_model=active_candidate.name,
                         provider=active_candidate.provider,

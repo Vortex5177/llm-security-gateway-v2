@@ -35,6 +35,8 @@ async def _security_gate(request: Request, body: dict[str, Any], request_id: str
     if result.key is None:
         return None  # 鉴权关闭（本机模式）
 
+    request.state.key_name = result.key.name  # 供请求日志归属（execute_chat 落库）
+
     model = str(body.get("model") or "")
     if not auth.key_allows_model(result.key, model):
         await audit.emit_event(
@@ -246,6 +248,7 @@ async def chat_completions(request: Request) -> Response:
     transport = getattr(request.app.state, "http_transport", None)
     session_factory = getattr(request.app.state, "session_factory", None)
     tag = request.headers.get("x-gw-tag")
+    key_name = getattr(request.state, "key_name", None)  # _security_gate 鉴权时挂上
 
     if body.get("stream"):
         stream_result = await routing.execute_chat_stream(
@@ -255,6 +258,7 @@ async def chat_completions(request: Request) -> Response:
             tag,
             transport=transport,
             session_factory=session_factory,
+            key_name=key_name,
         )
         headers = _gw_headers(
             stream_result.attempts, stream_result.provider, stream_result.resolved_model, request_id
@@ -286,6 +290,7 @@ async def chat_completions(request: Request) -> Response:
         tag,
         transport=transport,
         session_factory=session_factory,
+        key_name=key_name,
     )
     blocked = await _response_guard(request, result, request_id)
     if blocked is not None:

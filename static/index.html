@@ -206,10 +206,10 @@
       </table>
     </div>
     <div class="table-box">
-      <h2>最近安全事件 <button id="sec-verify" class="mini" type="button">校验审计链</button><span id="sec-verify-result" class="hint"></span></h2>
+      <h2>最近安全事件 <select id="sec-key" style="padding:2px 6px;font-size:11.5px"><option value="">全部用户</option><option value="-">（无 key·系统）</option></select> <button id="sec-verify" class="mini" type="button">校验审计链</button><span id="sec-verify-result" class="hint"></span></h2>
       <table>
         <thead>
-          <tr><th>时间</th><th>类型</th><th>级别</th><th>动作</th><th>规则</th><th>来源</th></tr>
+          <tr><th>时间</th><th>类型</th><th>级别</th><th>动作</th><th>规则</th><th>key</th><th>来源</th></tr>
         </thead>
         <tbody id="sec-events-body"></tbody>
       </table>
@@ -242,7 +242,7 @@
     <table>
       <thead>
         <tr>
-          <th>时间</th><th>tag</th><th>模型</th><th>tokens</th>
+          <th>时间</th><th>tag</th><th>key</th><th>模型</th><th>tokens</th>
           <th>延迟</th><th>TTFT</th><th>速度</th><th>状态</th><th>attempts</th>
         </tr>
       </thead>
@@ -250,6 +250,6 @@
     </table>
   </div>
 </main>
-<script src="./dashboard.js?v=12"></script>
+<script src="./dashboard.js?v=13"></script>
 </body>
 </html>

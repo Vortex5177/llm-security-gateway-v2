@@ -44,6 +44,8 @@ class RequestLog(Base):
     requested_model: Mapped[str] = mapped_column(String(128))
     resolved_model: Mapped[str] = mapped_column(String(128))
     provider: Mapped[str] = mapped_column(String(64), index=True)
+    # 归属：发起方 API Key 名（鉴权关闭/本机模式/升级前数据为 None）
+    key_name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     streamed: Mapped[bool] = mapped_column(Boolean, default=False)
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)

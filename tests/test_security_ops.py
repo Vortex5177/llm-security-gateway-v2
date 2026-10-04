@@ -79,6 +79,36 @@ async def test_events_filtering(config_dict, session_factory):
         assert len(resp.json()["events"]) == 2
 
 
+async def test_events_key_name_filtering(config_dict, session_factory):
+    from types import SimpleNamespace
+
+    await _seed(session_factory)  # 5 条：seed 均无 key 归属（key_name 为 NULL）
+    await audit.emit_event(
+        session_factory,
+        event_type="pii_detection",
+        severity="high",
+        action="block",
+        rule_id="pii.phone",
+        key=SimpleNamespace(name="b-cheng"),  # emit_event 只读 key.name
+        source_ip="192.168.1.23",
+    )
+    async with await _client(_make_app(config_dict, session_factory)) as client:
+        resp = await client.get(
+            "/api/security/events", params={"key_name": "b-cheng"}
+        )
+        assert resp.status_code == 200
+        events = resp.json()["events"]
+        assert [e["key_name"] for e in events] == ["b-cheng"]
+
+        resp = await client.get("/api/security/events", params={"key_name": "-"})
+        events = resp.json()["events"]
+        assert len(events) == 5
+        assert all(e["key_name"] is None for e in events)
+
+        resp = await client.get("/api/security/events")
+        assert len(resp.json()["events"]) == 6  # 不筛 = 全部
+
+
 async def test_summary_aggregates(config_dict, session_factory):
     await _seed(session_factory)
     async with await _client(_make_app(config_dict, session_factory)) as client:

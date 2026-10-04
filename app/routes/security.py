@@ -48,6 +48,8 @@ async def list_security_events(
     severity: str | None = Query(default=None),
     event_type: str | None = Query(default=None),
     rule_id: str | None = Query(default=None),
+    # "-" 哨兵 = 无归属事件（key_name 为 NULL：auth_failure/ssrf 等系统侧）
+    key_name: str | None = Query(default=None),
     days: int = Query(default=7, ge=1, le=90),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> dict[str, Any]:
@@ -66,6 +68,10 @@ async def list_security_events(
             stmt = stmt.where(SecurityEvent.event_type == event_type)
         if rule_id:
             stmt = stmt.where(SecurityEvent.rule_id == rule_id)
+        if key_name == "-":
+            stmt = stmt.where(SecurityEvent.key_name.is_(None))
+        elif key_name:
+            stmt = stmt.where(SecurityEvent.key_name == key_name)
         rows = (await session.execute(stmt)).scalars().all()
     return {"events": [_event_view(row) for row in rows], "days": days, "limit": limit}
 
