@@ -30,6 +30,7 @@ EVENT_MODEL_DENIED = "model_permission_denied"
 EVENT_SSRF_REJECTED = "ssrf_rejected"
 EVENT_KEY_CREATED = "key_created"
 EVENT_KEY_DISABLED = "key_disabled"
+EVENT_KEY_ENABLED = "key_enabled"
 EVENT_PROVIDER_CREATED = "provider_created"
 
 SEVERITIES = ("info", "low", "medium", "high", "critical")

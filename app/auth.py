@@ -122,6 +122,21 @@ async def disable_key(
         return _detach(row)
 
 
+async def enable_key(
+    session_factory: async_sessionmaker[AsyncSession] | None, name: str
+) -> ApiKey | None:
+    factory = session_factory or SessionLocal
+    async with factory() as session:
+        row = (
+            await session.execute(select(ApiKey).where(ApiKey.name == name))
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        row.disabled = False
+        await session.commit()
+        return _detach(row)
+
+
 # ------------------------------------------------------------ 请求鉴权
 
 @dataclass

@@ -762,7 +762,7 @@ function renderKeys(keys) {
       : k.rpm_limit + "/min" + (k.burst != null ? " · burst " + k.burst : "");
     const models = (k.allowed_models || []).join(", ") || "—";
     const action = k.disabled
-      ? '<span class="muted">—</span>'
+      ? '<button class="mini" type="button" data-act="enable" data-name="' + esc(k.name) + '">启用</button>'
       : '<button class="mini" type="button" data-act="disable" data-name="' + esc(k.name) + '">禁用</button>';
     return "<tr><td>" + esc(k.name) + "</td><td>" + role + '</td><td class="cellwrap">' + esc(models) +
       "</td><td>" + esc(limits) + "</td><td>" + status + "</td><td>" + fmtTime(k.last_used_at) + "</td><td>" + action + "</td></tr>";
@@ -894,13 +894,17 @@ document.getElementById("key-copy").addEventListener("click", async () => {
 });
 
 document.getElementById("keys-body").addEventListener("click", async (event) => {
-  const btn = event.target.closest('button[data-act="disable"]');
+  const btn = event.target.closest('button[data-act="disable"], button[data-act="enable"]');
   if (!btn) return;
+  const act = btn.dataset.act; // "disable" | "enable"，与端点路径同名
   const name = btn.dataset.name;
-  if (!confirm("确认禁用 Key「" + name + "」？使用该 Key 的请求将立即 401。")) return;
+  const tip = act === "disable"
+    ? "确认禁用 Key「" + name + "」？使用该 Key 的请求将立即 401。"
+    : "确认启用 Key「" + name + "」？该 Key 将恢复鉴权与限流。";
+  if (!confirm(tip)) return;
   btn.disabled = true;
   try {
-    const resp = await gfetch("/api/keys/" + encodeURIComponent(name) + "/disable", { method: "POST" });
+    const resp = await gfetch("/api/keys/" + encodeURIComponent(name) + "/" + act, { method: "POST" });
     if (!resp.ok) {
       let detail = "HTTP " + resp.status;
       try { detail = (await resp.json()).detail || detail; } catch (e) { /* 响应非 JSON */ }

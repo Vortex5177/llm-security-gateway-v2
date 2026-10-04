@@ -1,4 +1,4 @@
-"""API Key 管理端点（/api/keys）：创建/列表/禁用。
+"""API Key 管理端点（/api/keys）：创建/列表/禁用/启用。
 
 鉴权开启：仅 admin；鉴权关闭：回退本机 Origin 校验（引导场景）。
 明文 key 仅在创建响应中返回一次，此后列表只显示元信息。
@@ -107,6 +107,26 @@ async def disable_api_key(name: str, request: Request) -> dict[str, Any]:
     await audit.emit_event(
         session_factory,
         event_type=audit.EVENT_KEY_DISABLED,
+        severity="info",
+        action="allow",
+        key=result.key,
+        source_ip=audit.client_ip(request),
+        resource=name,
+    )
+    return _key_view(row)
+
+
+@router.post("/api/keys/{name}/enable")
+async def enable_api_key(name: str, request: Request) -> dict[str, Any]:
+    result = await auth.require_admin_or_local_origin(request)
+    session_factory = getattr(request.app.state, "session_factory", None)
+    target = next((r for r in await auth.list_keys(session_factory) if r.name == name), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"key 不存在: {name}")
+    row = await auth.enable_key(session_factory, name)
+    await audit.emit_event(
+        session_factory,
+        event_type=audit.EVENT_KEY_ENABLED,
         severity="info",
         action="allow",
         key=result.key,

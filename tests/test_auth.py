@@ -301,6 +301,33 @@ async def test_disable_key_flow_and_self_guard(api, session_factory):
     assert "key_disabled" in [e.event_type for e in events]
 
 
+async def test_enable_key_flow(api, session_factory):
+    admin_key = await _make_key(session_factory, name="a1", role="admin")
+    user_key = await _make_key(session_factory, name="u1", role="user")
+    headers = _bearer(admin_key)
+
+    resp = await api.post("/api/keys/u1/disable", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["disabled"] is True
+
+    resp = await api.post("/api/keys/u1/enable", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["disabled"] is False
+
+    # 启用是幂等操作：重复启用不报错
+    resp = await api.post("/api/keys/u1/enable", headers=headers)
+    assert resp.status_code == 200
+
+    # 启用后鉴权恢复：不再被 401 拒绝（后续可能因模型/上游原因失败，但不是鉴权问题）
+    resp = await api.post(
+        "/v1/chat/completions", json=CHAT_BODY, headers=_bearer(user_key)
+    )
+    assert resp.status_code != 401
+
+    events = await _events(session_factory)
+    assert "key_enabled" in [e.event_type for e in events]
+
+
 async def test_key_events_do_not_leak_plaintext(api, session_factory):
     admin_key = await _make_key(session_factory, name="a1", role="admin")
     await api.post(
