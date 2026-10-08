@@ -122,6 +122,50 @@ def test_promptguard_onnx_missing_model_raises():
         PromptGuardOnnxClassifier("__nonexistent_model_dir__")
 
 
+def test_modernguard_routes_and_missing_model_raises():
+    """第二引擎：kind 路由到 ModernGuard；目录缺失同样显式报错。"""
+    from app.security.model_audit import ModernGuardOnnxClassifier
+
+    # model_dir 缺省时无论 kind 都回 Stub（演示管线）
+    assert isinstance(
+        build_classifier(None, kind="modernguard"), StubInjectionClassifier
+    )
+    with pytest.raises(RuntimeError):
+        ModernGuardOnnxClassifier("__nonexistent_model_dir__")
+
+
+def test_union_rows_or_semantics_and_latency():
+    """双引擎并集行合成：OR 语义、injection 侧 score 取 max、延迟串行相加。"""
+    from evaluation.model_audit_report import union_rows
+
+    base = {"request_log_id": 1, "prompt_digest": "x", "rule_injection": True,
+            "rule_latency_ms": 0.1, "agree": False}
+    a = {**base, "model_id": "pg", "model_label": "benign", "model_score": 0.9,
+         "model_latency_ms": 2.0}
+    b = {**base, "model_id": "mg", "model_label": "injection", "model_score": 0.7,
+         "model_latency_ms": 3.0}
+    merged = union_rows([a], [b])
+    assert len(merged) == 1
+    m = merged[0]
+    assert m["model_id"] == "pg+mg-union"
+    assert m["model_label"] == "injection"  # OR 语义：任一判 injection 即 injection
+    assert m["model_score"] == 0.7  # injection 侧 score 取 max（非 benign 侧的 0.9）
+    assert m["model_latency_ms"] == 5.0  # 串行相加的保守口径
+    assert m["agree"] is True  # rule=True 与 union injection=True 一致
+
+    # 双 benign：score 取两侧 max
+    a2 = {**base, "model_id": "pg", "model_label": "benign", "model_score": 0.8,
+          "model_latency_ms": 1.0}
+    b2 = {**base, "model_id": "mg", "model_label": "benign", "model_score": 0.6,
+          "model_latency_ms": 1.5}
+    m2 = union_rows([a2], [b2])[0]
+    assert m2["model_label"] == "benign"
+    assert m2["model_score"] == 0.8
+
+    # id 不对齐的行被剔除（口径：只比两引擎都跑到的样本）
+    assert len(union_rows([a], [])) == 0
+
+
 # ------------------------------------------------------------------ 审计+指标
 async def test_audit_and_metrics_confusion_matrix(session_factory):
     engine = SecurityEngine(load_policy())

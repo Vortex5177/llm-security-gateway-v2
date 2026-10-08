@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "run_id": "model-audit-20261007-081144",
+    "db": "C:\\Users\\29461\\Documents\\Qoder\\2026-09-29\\chat-1\\gateway-v2\\data\\gateway.db",
+    "policy": "config/security.yaml",
+    "ts": "20261007-081144",
+    "model_id": "promptguard2-86m-onnx"
+  },
+  "metrics": {
+    "total": 926,
+    "tp": 242,
+    "fp": 22,
+    "fn": 88,
+    "tn": 574,
+    "agreement": 0.881,
+    "precision": 0.917,
+    "recall": 0.733,
+    "f1": 0.815,
+    "avg_model_latency_ms": 407.704,
+    "avg_rule_latency_ms": 0.49,
+    "model_id": "promptguard2-86m-onnx"
+  }
+}

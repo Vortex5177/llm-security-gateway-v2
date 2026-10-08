@@ -1,0 +1,77 @@
+{
+  "meta": {
+    "run_id": "model-audit-20261008-054908",
+    "db": "C:\\Users\\29461\\Documents\\Qoder\\2026-09-29\\chat-1\\gateway-v2\\data\\gateway.db",
+    "policy": "config/security.yaml",
+    "ts": "20261008-054908",
+    "model_id": "promptguard2-86m-onnx",
+    "model_ids": [
+      "promptguard2-86m-onnx",
+      "modernguard1-307m-onnx"
+    ]
+  },
+  "metrics": {
+    "total": 926,
+    "tp": 242,
+    "fp": 22,
+    "fn": 88,
+    "tn": 574,
+    "agreement": 0.881,
+    "precision": 0.917,
+    "recall": 0.733,
+    "f1": 0.815,
+    "avg_model_latency_ms": 447.438,
+    "avg_rule_latency_ms": 0.54,
+    "model_id": "promptguard2-86m-onnx"
+  },
+  "runs": [
+    {
+      "model_id": "promptguard2-86m-onnx",
+      "metrics": {
+        "total": 926,
+        "tp": 242,
+        "fp": 22,
+        "fn": 88,
+        "tn": 574,
+        "agreement": 0.881,
+        "precision": 0.917,
+        "recall": 0.733,
+        "f1": 0.815,
+        "avg_model_latency_ms": 447.438,
+        "avg_rule_latency_ms": 0.54,
+        "model_id": "promptguard2-86m-onnx"
+      }
+    },
+    {
+      "model_id": "modernguard1-307m-onnx",
+      "metrics": {
+        "total": 926,
+        "tp": 289,
+        "fp": 169,
+        "fn": 41,
+        "tn": 427,
+        "agreement": 0.773,
+        "precision": 0.631,
+        "recall": 0.876,
+        "f1": 0.734,
+        "avg_model_latency_ms": 139.27,
+        "avg_rule_latency_ms": 0.523,
+        "model_id": "modernguard1-307m-onnx"
+      }
+    }
+  ],
+  "union": {
+    "total": 926,
+    "tp": 289,
+    "fp": 169,
+    "fn": 41,
+    "tn": 427,
+    "agreement": 0.773,
+    "precision": 0.631,
+    "recall": 0.876,
+    "f1": 0.734,
+    "avg_model_latency_ms": 586.708,
+    "avg_rule_latency_ms": 0.54,
+    "model_id": "promptguard2-86m-onnx+modernguard1-307m-onnx-union"
+  }
+}

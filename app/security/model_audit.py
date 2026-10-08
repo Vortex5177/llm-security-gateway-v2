@@ -1,8 +1,9 @@
 r"""M5 模型辅助审计：CPU 小分类器离线扫 request_logs，与规则引擎判定对比。
 
 设计要点（对齐"不引重型依赖"与事件纪律）：
-- 分类器可插拔：真实 PromptGuard 2 ONNX（懒加载 onnxruntime/transformers，属可选依赖）
-  与确定性 StubInjectionClassifier（无模型时演示管线用，报告会明确标注）；
+- 分类器可插拔：真实 PromptGuard 2 ONNX / ModernGuard-1 ONNX（懒加载
+  onnxruntime/transformers，属可选依赖）与确定性 StubInjectionClassifier
+  （无模型时演示管线用，报告会明确标注）；
 - 离线批处理：读 request_logs.injected_json 里的 prompt，重算规则判定（确定性，
   不依赖 request_id join），再跑模型分类，二者对比落 model_audit_results 表；
 - 正类聚焦 injection（PromptGuard 职责）；PII/secret 属规则专属，不入模型对比；
@@ -149,6 +150,65 @@ def _softmax(xs: Sequence[float]) -> list[float]:
     return [e / s for e in exps]
 
 
+class ModernGuardOnnxClassifier:
+    """ModernGuard-1（307M mmBERT）ONNX CPU 分类器；接口与 PromptGuard 对齐。
+
+    model_dir 需含 model.onnx（动态 seq 轴，opset 18）与 tokenizer 文件，
+    由 evaluation/export_modernguard_onnx.py 从 guardion/ModernGuard-1 导出
+    （导出后经外部双语卷对齐验证：与 transformers 版零二值翻转）。
+    与 PromptGuard 同为 injection/benign 二分类，可作双模型并集审计的第二引擎。
+    """
+
+    model_id = "modernguard1-307m-onnx"
+
+    # ModernGuard-1 标签序（guardion/ModernGuard-1 config）：0=SAFE,1=PROMPT_INJECTION
+    _LABELS = ("benign", "injection")
+
+    def __init__(self, model_dir: str, max_length: int = 2048) -> None:
+        try:
+            import onnxruntime as ort  # noqa: PLC0415
+            from transformers import AutoTokenizer  # noqa: PLC0415
+        except ImportError as exc:  # pragma: no cover - 取决于环境
+            raise RuntimeError(
+                "ModernGuard ONNX 需要 onnxruntime 与 transformers（可选依赖）。"
+                "安装：pip install onnxruntime transformers；或改用 StubInjectionClassifier。"
+            ) from exc
+        import os  # noqa: PLC0415
+
+        onnx_path = os.path.join(model_dir, "model.onnx")
+        if not os.path.isfile(onnx_path):
+            raise RuntimeError(f"未找到 ONNX 模型: {onnx_path}")
+        self._tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        self._session = ort.InferenceSession(
+            onnx_path, providers=["CPUExecutionProvider"]
+        )
+        self._max_length = max_length
+
+    def classify(self, text: str) -> ModelVerdict:  # pragma: no cover - 需真实模型
+        start = time.perf_counter()
+        # 图为动态 seq 轴：无需 padding，按实际长度进 session
+        enc = self._tokenizer(
+            text[:8000],
+            truncation=True,
+            max_length=self._max_length,
+            return_tensors="np",
+        )
+        inputs = {
+            "input_ids": enc["input_ids"].astype("int64"),
+            "attention_mask": enc["attention_mask"].astype("int64"),
+        }
+        if "token_type_ids" in [i.name for i in self._session.get_inputs()]:
+            inputs["token_type_ids"] = enc.get(
+                "token_type_ids", enc["attention_mask"] * 0
+            ).astype("int64")
+        logits = self._session.run(None, inputs)[0][0]
+        probs = _softmax(logits)
+        idx = int(max(range(len(probs)), key=lambda i: probs[i]))
+        label = self._LABELS[idx] if idx < len(self._LABELS) else "benign"
+        latency_ms = (time.perf_counter() - start) * 1000
+        return ModelVerdict(label=label, score=float(probs[idx]), latency_ms=latency_ms)
+
+
 # ------------------------------------------------------------------ prompt 抽取
 def extract_prompt_text(injected_json: str | None) -> str:
     """从 request_logs.injected_json（完整请求参数快照）抽取拼接后的 prompt 文本。"""
@@ -272,9 +332,14 @@ def comparison_metrics(rows: list[dict]) -> dict:
     }
 
 
-def build_classifier(model_dir: str | None) -> Classifier:
-    """有 model_dir 则尝试真实 PromptGuard ONNX，失败或缺省回退 Stub。"""
+def build_classifier(model_dir: str | None, kind: str = "promptguard") -> Classifier:
+    """有 model_dir 则按 kind 建真实 ONNX 分类器，缺省或失败回退 Stub。
+
+    kind: "promptguard"（默认，向后兼容）或 "modernguard"。
+    """
     if model_dir:
+        if kind == "modernguard":
+            return ModernGuardOnnxClassifier(model_dir)
         return PromptGuardOnnxClassifier(model_dir)
     return StubInjectionClassifier()
 
